@@ -425,12 +425,12 @@ def detail():
         gradeRecordingUrl = URL('assignments', 'record_grade'),
         )
 
-def _autograde_one_mchoice(course_name, sid, question, points, deadline, first_p):
+def _autograde_one_mchoice(course_name, sid, qname, points, deadline, first_p):
     # Look in mchoice_answers table for results of first or last run before deadline
 
     # sid matches auth_user.username, not auth_user.id
     query = ((db.mchoice_answers.sid == sid) & \
-            (db.mchoice_answers.div_id == question.name) \
+            (db.mchoice_answers.div_id == qname) \
              )
 
     if deadline:
@@ -451,22 +451,22 @@ def _autograde_one_mchoice(course_name, sid, question, points, deadline, first_p
     db.question_grades.update_or_insert(
         ((db.question_grades.sid == sid) &
          (db.question_grades.course_name == course_name) &
-         (db.question_grades.div_id == question.name)
+         (db.question_grades.div_id == qname)
          ),
         sid=sid,
         course_name=course_name,
-        div_id=question.name,
+        div_id=qname,
         score = score,
         comment = "autograded"
     )
 
-def _autograde_one_ac(course_name, sid, question, points, deadline):
+def _autograde_one_ac(course_name, sid, qname, points, deadline):
     # Look in code table for results of last run before deadline
 
     # sid matches auth_user.username, not auth_user.id
 
     query = ((db.useinfo.course_id == course_name) & \
-            (db.useinfo.div_id == question.name) & \
+            (db.useinfo.div_id == qname) & \
             (db.useinfo.sid == sid) & \
             (db.useinfo.event == 'unittest'))
 
@@ -486,20 +486,21 @@ def _autograde_one_ac(course_name, sid, question, points, deadline):
     db.question_grades.update_or_insert(
         ((db.question_grades.sid == sid) &
          (db.question_grades.course_name == course_name) &
-         (db.question_grades.div_id == question.name)
+         (db.question_grades.div_id == qname)
          ),
         sid=sid,
         course_name=course_name,
-        div_id=question.name,
+        div_id=qname,
         score = score,
         comment = "autograded",
         useinfo_id = id
     )
 
-def _autograde_one_visited(course_name, sid, question, points, deadline):
+def _autograde_one_visited(course_name, sid, qname, points, deadline):
     # look in useinfo, to see if visited (before deadline)
     # sid matches auth_user.username, not auth_user.id
-    query =  (db.useinfo.div_id == question.name) & (db.useinfo.sid == sid)
+    print qname[-20:], sid, deadline
+    query =  (db.useinfo.div_id == qname) & (db.useinfo.sid == sid)
     if deadline:
         query = query & (db.useinfo.timestamp < deadline)
     visit = db(query).select().first()
@@ -512,11 +513,11 @@ def _autograde_one_visited(course_name, sid, question, points, deadline):
     db.question_grades.update_or_insert(
         ((db.question_grades.sid == sid) &
          (db.question_grades.course_name == course_name) &
-         (db.question_grades.div_id == question.name)
+         (db.question_grades.div_id == qname)
          ),
         sid=sid,
         course_name=course_name,
-        div_id=question.name,
+        div_id=qname,
         score = score,
         comment = "autograded"
     )
@@ -533,18 +534,15 @@ def _autograde_one_q(course_name, assignment_id, sid, qname, points, deadline=No
         # print "skipping; previously manually graded, comment = {}".format(existing.comment)
         return
 
-    # get the question object
-    question = db(db.questions.name == qname).select().first()
-
     # dispatch on grading_type; if none specified, can't autograde
     if autograde == 'unittest':
-        _autograde_one_ac(course_name, sid, question, points, deadline)
+        _autograde_one_ac(course_name, sid, qname, points, deadline)
     elif autograde == 'first_answer':
-        _autograde_one_mchoice(course_name, sid, question, points, deadline, first_p=True)
+        _autograde_one_mchoice(course_name, sid, qname, points, deadline, first_p=True)
     elif autograde == 'last_answer':
-        _autograde_one_mchoice(course_name, sid, question, points, deadline, first_p=False)
+        _autograde_one_mchoice(course_name, sid, qname, points, deadline, first_p=False)
     elif autograde == 'visited':
-        _autograde_one_visited(course_name, sid, question, points, deadline)
+        _autograde_one_visited(course_name, sid, qname, points, deadline)
     else:
         # print "skipping; autograde = {}".format(question.autograde)
         pass
@@ -677,8 +675,7 @@ def autograde():
     sid = request.vars.get('sid', None)
     qname = request.vars.get('question', None)
     enforce_deadline = request.vars.get('enforceDeadline', None)
-
-    if enforce_deadline:
+    if enforce_deadline != "false":
         # get the deadline associated with the assignment
         deadline = assignment.duedate
     else:
@@ -698,7 +695,7 @@ def autograde():
         # get all qids and point values for this assignment
         questions_query = db((db.assignment_questions.assignment_id == assignment_id) & (db.assignment_questions.question_id == db.questions.id)).select(db.questions.name, db.assignment_questions.points, db.assignment_questions.autograde)
         questions = [(row.questions.name, row.assignment_questions.points, row.assignment_questions.autograde) for row in questions_query]
-
+    print len(questions)
     count = 0
     for (qdiv, points, autograde) in questions:
         for s in sids:
