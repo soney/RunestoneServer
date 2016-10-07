@@ -221,7 +221,11 @@ def get_engagement_time(assignment, user, preclass, all_problem_sets = False, al
     elif all_non_problem_sets:
         q =  db(db.useinfo.sid == user.username)(~(db.useinfo.div_id.contains('Assignments') | db.useinfo.div_id.startswith('ps_')))
     else:
-        q =  db(db.useinfo.div_id == db.problems.acid)(db.problems.assignment == assignment.id)(db.useinfo.sid == user.username)
+        # q =  db(db.useinfo.div_id == db.problems.acid)(db.problems.assignment == assignment.id)(db.useinfo.sid == user.username)
+        q = db(db.assignment_questions.assignment_id == assignment.id)
+        q = q(db.assignment_questions.question_id == db.questions.id)
+        q = q(db.questions.name == db.useinfo.div_id)
+        q = q(db.useinfo.sid == user.username)
         if preclass:
             dl = get_deadline(assignment, user)
             if dl:
