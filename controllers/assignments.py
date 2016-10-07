@@ -655,8 +655,8 @@ def calculate_totals():
         zipped = zip(student_rows, scores)
         over_max = ["{} {}: {}".format(z[0].first_name, z[0].last_name, z[1]) for z in zipped if z[1] > assignment.points]
         results['message'] = "Calculated totals for {} students\n\tpossible: {}\n\tmax: {}\n\tmin: {}\n\tmean: {}\n\tover max {}".format(
-            assignment.points,
             len(scores),
+            assignment.points,
             max(scores),
             min(scores),
             sum(scores)/float(len(scores)),
