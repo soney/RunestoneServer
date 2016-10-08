@@ -162,10 +162,11 @@ db.define_table('assignments',
     )
 
 class score(object):
-    def __init__(self, acid=None, points=0, comment="", user=None):
+    def __init__(self, acid=None, points=0, max_points = 0, comment="", user=None):
         self.acid = acid
         self.user = user
         self.points = points
+        self.max_points = max_points
         if type(self.points) not in [float, int]:
             # would be nice to flag error here
             self.points = 0 
@@ -200,17 +201,19 @@ class Session(object):
         self.assignment = assignment
 
 def get_deadline(assignment, user):
-    section = section_users(db.auth_user.id == user.id).select(db.sections.ALL).first()
-    q = db(db.deadlines.assignment == assignment.id)
-    if section:
-        q = q((db.deadlines.section == section.id) | (db.deadlines.section==None))
-    else:
-        q = q(db.deadlines.section==None)
-    dl = q.select(db.deadlines.ALL, orderby=db.deadlines.section).first()
-    if dl:
-        return dl.deadline  #a datetime object
-    else:
-        return None
+    return assignment.duedate
+    # old code for looking up in a separate deadlines table, per section
+    # section = section_users(db.auth_user.id == user.id).select(db.sections.ALL).first()
+    # q = db(db.deadlines.assignment == assignment.id)
+    # if section:
+    #     q = q((db.deadlines.section == section.id) | (db.deadlines.section==None))
+    # else:
+    #     q = q(db.deadlines.section==None)
+    # dl = q.select(db.deadlines.ALL, orderby=db.deadlines.section).first()
+    # if dl:
+    #     return dl.deadline  #a datetime object
+    # else:
+    #     return None
 
 def get_engagement_time(assignment, user, preclass, all_problem_sets = False, all_non_problem_sets = False):
     if all_problem_sets:
@@ -218,7 +221,11 @@ def get_engagement_time(assignment, user, preclass, all_problem_sets = False, al
     elif all_non_problem_sets:
         q =  db(db.useinfo.sid == user.username)(~(db.useinfo.div_id.contains('Assignments') | db.useinfo.div_id.startswith('ps_')))
     else:
-        q =  db(db.useinfo.div_id == db.problems.acid)(db.problems.assignment == assignment.id)(db.useinfo.sid == user.username)
+        # q =  db(db.useinfo.div_id == db.problems.acid)(db.problems.assignment == assignment.id)(db.useinfo.sid == user.username)
+        q = db(db.assignment_questions.assignment_id == assignment.id)
+        q = q(db.assignment_questions.question_id == db.questions.id)
+        q = q(db.questions.name == db.useinfo.div_id)
+        q = q(db.useinfo.sid == user.username)
         if preclass:
             dl = get_deadline(assignment, user)
             if dl:
@@ -389,8 +396,8 @@ def extract_last_grades(L, f):
 
 def assignment_get_scores(assignment, problem=None, user=None, section_id=None, preclass=True):
     assignment_type = db(db.assignment_types.id == assignment.assignment_type).select().first()
-    if assignment_type and assignment_type.grade_type == 'use':
-        return assignment_get_use_scores(assignment, problem, user, section_id, preclass)
+    # if assignment_type and assignment_type.grade_type == 'use':
+    #     return assignment_get_use_scores(assignment, problem, user, section_id, preclass)
     scores = []
     if problem and user:
         pass
@@ -437,10 +444,11 @@ def assignment_get_scores(assignment, problem=None, user=None, section_id=None, 
             orderby = db.assignment_questions.id
         )
         scores = [score(
-            points = g.score,
-            comment = g.comment,
-            acid = g.div_id,
-            user = auth.user.id
+            points = g.question_grades.score,
+            comment = g.question_grades.comment,
+            acid = g.question_grades.div_id,
+            user = auth.user.id,
+            max_points = g.assignment_questions.points
         ) for g in grades]
         #
         #
