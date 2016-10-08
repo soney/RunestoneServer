@@ -162,11 +162,10 @@ db.define_table('assignments',
     )
 
 class score(object):
-    def __init__(self, acid=None, points=0, max_points = 0, comment="", user=None):
+    def __init__(self, acid=None, points=0, comment="", user=None):
         self.acid = acid
         self.user = user
         self.points = points
-        self.max_points = max_points
         if type(self.points) not in [float, int]:
             # would be nice to flag error here
             self.points = 0 
@@ -201,19 +200,17 @@ class Session(object):
         self.assignment = assignment
 
 def get_deadline(assignment, user):
-    return assignment.duedate
-    # old code for looking up in a separate deadlines table, per section
-    # section = section_users(db.auth_user.id == user.id).select(db.sections.ALL).first()
-    # q = db(db.deadlines.assignment == assignment.id)
-    # if section:
-    #     q = q((db.deadlines.section == section.id) | (db.deadlines.section==None))
-    # else:
-    #     q = q(db.deadlines.section==None)
-    # dl = q.select(db.deadlines.ALL, orderby=db.deadlines.section).first()
-    # if dl:
-    #     return dl.deadline  #a datetime object
-    # else:
-    #     return None
+    section = section_users(db.auth_user.id == user.id).select(db.sections.ALL).first()
+    q = db(db.deadlines.assignment == assignment.id)
+    if section:
+        q = q((db.deadlines.section == section.id) | (db.deadlines.section==None))
+    else:
+        q = q(db.deadlines.section==None)
+    dl = q.select(db.deadlines.ALL, orderby=db.deadlines.section).first()
+    if dl:
+        return dl.deadline  #a datetime object
+    else:
+        return None
 
 def get_engagement_time(assignment, user, preclass, all_problem_sets = False, all_non_problem_sets = False):
     if all_problem_sets:
@@ -221,11 +218,7 @@ def get_engagement_time(assignment, user, preclass, all_problem_sets = False, al
     elif all_non_problem_sets:
         q =  db(db.useinfo.sid == user.username)(~(db.useinfo.div_id.contains('Assignments') | db.useinfo.div_id.startswith('ps_')))
     else:
-        # q =  db(db.useinfo.div_id == db.problems.acid)(db.problems.assignment == assignment.id)(db.useinfo.sid == user.username)
-        q = db(db.assignment_questions.assignment_id == assignment.id)
-        q = q(db.assignment_questions.question_id == db.questions.id)
-        q = q(db.questions.name == db.useinfo.div_id)
-        q = q(db.useinfo.sid == user.username)
+        q =  db(db.useinfo.div_id == db.problems.acid)(db.problems.assignment == assignment.id)(db.useinfo.sid == user.username)
         if preclass:
             dl = get_deadline(assignment, user)
             if dl:
@@ -396,82 +389,49 @@ def extract_last_grades(L, f):
 
 def assignment_get_scores(assignment, problem=None, user=None, section_id=None, preclass=True):
     assignment_type = db(db.assignment_types.id == assignment.assignment_type).select().first()
-    # if assignment_type and assignment_type.grade_type == 'use':
-    #     return assignment_get_use_scores(assignment, problem, user, section_id, preclass)
+    if assignment_type and assignment_type.grade_type == 'use':
+        return assignment_get_use_scores(assignment, problem, user, section_id, preclass)
     scores = []
     if problem and user:
         pass
     elif problem:
         # get grades for this acid for all users
-        grades = db(
-            (db.question_grades.course_name == auth.user.course_name) &
-            (db.question_grades.div_id == problem)).select(
-            db.question_grades.ALL
-        )
-        scores = [score(
-            points = g.score,
-            comment = g.comment,
-            acid = problem,
-            user = auth.user.id
-        ) for g in grades]
-        # grades = db(db.code.sid == db.auth_user.username)(db.code.acid == problem).select(
-        #     db.code.ALL,
-        #     db.auth_user.ALL,
-        #     orderby= db.code.sid | db.code.id
-        #     )
-        # # keep only last grade for each user (for this problem)
-        # last_grades = extract_last_grades(grades, lambda g: g. auth_user.id)
-        # for g in last_grades:
-        #     scores.append(score(
-        #         points=g.code.grade,
-        #         comment= g.code.comment,
-        #         acid=problem,
-        #         user=g.auth_user,
-        #         ))
+        grades = db(db.code.sid == db.auth_user.username)(db.code.acid == problem).select(
+            db.code.ALL,
+            db.auth_user.ALL,
+            orderby= db.code.sid | db.code.id
+            )
+        # keep only last grade for each user (for this problem)
+        last_grades = extract_last_grades(grades, lambda g: g. auth_user.id)
+        for g in last_grades:
+            scores.append(score(
+                points=g.code.grade,
+                comment= g.code.comment,
+                acid=problem,
+                user=g.auth_user,
+                ))
     elif user:
         # get grades for individual components of this assignment
-        grades = db(
-            (db.question_grades.course_name == auth.user.course_name) &
-            (db.question_grades.sid == user.username) &
-            (db.question_grades.div_id == db.questions.name) &
-            (db.assignment_questions.question_id == db.questions.id) &
-            (db.assignment_questions.assignment_id == assignment.id)
-        ).select(
-            db.question_grades.score,
-            db.question_grades.comment,
-            db.question_grades.div_id,
-            db.assignment_questions.points,
-            orderby = db.assignment_questions.id
-        )
-        scores = [score(
-            points = g.question_grades.score,
-            comment = g.question_grades.comment,
-            acid = g.question_grades.div_id,
-            user = auth.user.id,
-            max_points = g.assignment_questions.points
-        ) for g in grades]
-        #
-        #
-        # q = db(db.problems.acid == db.code.acid)
-        # q = q(db.problems.assignment == assignment.id)
-        # q = q(db.code.sid == user.username)
-        # grades = q.select(
-        #    db.code.acid,
-        #    db.code.grade,
-        #    db.code.comment,
-        #    db.code.timestamp,
-        #    orderby = db.code.acid | db.code.id
-        #    )
-        # # keep only last grade for each problem (for this user)
-        # last_grades = extract_last_grades(grades, lambda g: g.acid)
-        # for g in last_grades:
-        #     scores.append(
-        #         score(
-        #            points=g.grade,
-        #            comment=g.comment,
-        #            acid=g.acid,
-        #            user=user
-        #         ))
+        q = db(db.problems.acid == db.code.acid)
+        q = q(db.problems.assignment == assignment.id)
+        q = q(db.code.sid == user.username)
+        grades = q.select(
+           db.code.acid,
+           db.code.grade,
+           db.code.comment,
+           db.code.timestamp,
+           orderby = db.code.acid | db.code.id
+           )
+        # keep only last grade for each problem (for this user)
+        last_grades = extract_last_grades(grades, lambda g: g.acid)
+        for g in last_grades:
+            scores.append(
+                score(
+                   points=g.grade,
+                   comment=g.comment,
+                   acid=g.acid,
+                   user=user
+                ))
     else:
         # for all users: grades for all assignments, not for individual problems
         grades = db(db.grades.assignment == assignment.id).select(db.grades.ALL)
