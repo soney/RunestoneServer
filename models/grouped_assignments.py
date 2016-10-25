@@ -112,10 +112,10 @@ class CourseGrade(object):
         row['Total']= self.points()
         if 'NonPS Hours' not in type_names:
             type_names.append('NonPS Hours')
-        row['NonPS Hours'] = get_engagement_time(None, self.student, False, all_non_problem_sets = True)/3600.0
+        row['NonPS Hours'] = get_engagement_time(None, self.student, False, all_non_problem_sets = True, course_name = self.course.course_name)/3600.0
         if 'PS Hours' not in type_names:
             type_names.append('PS Hours')
-        row['PS Hours'] = get_engagement_time(None, self.student, False, all_problem_sets = True)/3600.0
+        row['PS Hours'] = get_engagement_time(None, self.student, False, all_problem_sets = True, course_name = self.course.course_name)/3600.0
         for t in self.assignment_type_grades:
             t.csv(row, type_names, assignment_names)
         return row
@@ -215,11 +215,11 @@ def get_deadline(assignment, user):
     # else:
     #     return None
 
-def get_engagement_time(assignment, user, preclass, all_problem_sets = False, all_non_problem_sets = False):
+def get_engagement_time(assignment, user, preclass, all_problem_sets = False, all_non_problem_sets = False, course_name = None):
     if all_problem_sets:
-        q =  db(db.useinfo.sid == user.username)(db.useinfo.div_id.contains('Assignments') | db.useinfo.div_id.startswith('ps_'))
+        q =  db(db.useinfo.sid == user.username)(db.useinfo.div_id.contains('Assignments') | db.useinfo.div_id.startswith('ps'))
     elif all_non_problem_sets:
-        q =  db(db.useinfo.sid == user.username)(~(db.useinfo.div_id.contains('Assignments') | db.useinfo.div_id.startswith('ps_')))
+        q =  db(db.useinfo.sid == user.username)(~(db.useinfo.div_id.contains('Assignments') | db.useinfo.div_id.startswith('ps')))
     else:
         # q =  db(db.useinfo.div_id == db.problems.acid)(db.problems.assignment == assignment.id)(db.useinfo.sid == user.username)
         q = db(db.assignment_questions.assignment_id == assignment.id)
@@ -230,6 +230,8 @@ def get_engagement_time(assignment, user, preclass, all_problem_sets = False, al
             dl = get_deadline(assignment, user)
             if dl:
                 q = q(db.useinfo.timestamp < dl)       
+    if course_name:
+        q = q(db.useinfo.course_id == course_name)
     activities = q.select(db.useinfo.timestamp, orderby=db.useinfo.timestamp)
     sessions = []
     THRESH = 300
