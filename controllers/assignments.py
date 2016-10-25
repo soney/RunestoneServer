@@ -45,7 +45,7 @@ def index():
     if '506' in auth.user.course_name:
         types_to_use = ['Lecture Prep', 'problem_set', 'reading_response']
     elif '106' in auth.user.course_name:
-        types_to_use = ['Lecture Prep', 'lecture_waiver', 'lecture_attendance', 'problem_set', 'reading_response']
+        types_to_use = ['Lecture Prep', 'problem_set', 'reading_response']
     else:
         types_to_use = 'all'
 
