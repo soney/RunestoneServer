@@ -1,5 +1,4 @@
 
 def index():
-    full_url = '%s://%s%s' % (request.env.wsgi_url_scheme, request.env.http_host,
-                   request.env.web2py_original_uri)
+    full_url = URL(args=request.args, vars=request.get_vars, host=True)
     return {'url': full_url}
