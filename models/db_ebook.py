@@ -101,6 +101,7 @@ db.define_table('timed_exam',
     Field('incorrect','integer'),
     Field('skipped','integer'),
     Field('time_taken','integer'),
+    Field('reset','boolean'),
     migrate='runestone_timed_exam.table'
     )
 
@@ -151,4 +152,23 @@ db.define_table('parsons_answers',
     Field('source','string'),
     Field('correct','boolean'),
     migrate='runestone_parsons_answers.table'
+    )
+db.define_table('codelens_answers',
+    Field('timestamp','datetime'),
+    Field('div_id','string'),
+    Field('sid','string'),
+    Field('course_name','string'),
+    Field('answer','string'),
+    Field('source','string'),
+    Field('correct','boolean'),
+    migrate='runestone_codelens_answers.table'
+    )
+
+db.define_table('shortanswer_answers',
+    Field('timestamp','datetime'),
+    Field('div_id','string'),
+    Field('sid','string'),
+    Field('course_name','string'),
+    Field('answer','string'),
+    migrate='runestone_shortanswer_answers.table'
     )

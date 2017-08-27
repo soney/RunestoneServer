@@ -1,22 +1,6 @@
 {{ extend "admin/instructors.html"}}
 {{ block tabcontent }}
 
-<script src="/{{=request.application}}/static/{{=course_id}}/_static/skulpt.min.js" type="text/javascript"></script>
-<script src="/{{=request.application}}/static/{{=course_id}}/_static/skulpt-stdlib.js" type="text/javascript"></script>
-<!--<script src="/{{=request.application}}/static/{{=course_id}}/_static/builtin.js" type="text/javascript"></script>-->
-<script src="/{{=request.application}}/static/{{=course_id}}/_static/codemirror.js" type="text/javascript"></script>
-<script src="/{{=request.application}}/static/{{=course_id}}/_static/runestonebase.js" type="text/javascript"></script>
-<script src="/{{=request.application}}/static/{{=course_id}}/_static/activecode.js" type="text/javascript"></script>
-<script src="/{{=request.application}}/static/{{=course_id}}/_static/bookfuncs.js" type="text/javascript"></script>
-
-<script type="text/javascript" src="/{{=request.application}}/static/js/superfish.js"></script>
-<script type="text/javascript" src="/{{=request.application}}/static/{{=course_id}}/_static/jquery.tablesorter.js"></script>
-<script type="text/javascript" src="/{{=request.application}}/static/{{=course_id}}/_static/jquery-ui-1.10.3.custom.min.js"></script>
-
-<link href="/{{=request.application}}/static/{{=course_id}}/_static/codemirror.css" rel="stylesheet" type="text/css"/>
-<link href="/{{=request.application}}/static/{{=course_id}}/_static/jquery-ui-1.10.3.custom.min.css" rel="stylesheet" type="text/css"/>
-
-
 <script type="text/javascript">
   eBookConfig.gradingURL = '{{=gradingUrl}}';
   eBookConfig.gradeRecordingUrl = '{{=gradeRecordingUrl}}';
@@ -24,6 +8,8 @@
   eBookConfig.calcTotalsURL = '{{=calcTotalsURL}}';
   eBookConfig.setTotalURL = '{{=setTotalURL}}';
   eBookConfig.getCourseStudentsURL = '{{=getCourseStudentsURL}}';
+  eBookConfig.get_assignment_release_statesURL = '{{=get_assignment_release_statesURL}}';
+  eBookConfig.course = '{{=course_id}}';
   // load the students dictionary once the page loads
   $(getCourseStudents)
 </script>
@@ -72,30 +58,27 @@
 
             <div id="autogradingform" style="text-align: center; visibility: hidden;">
                     <form>
-                        <input id = "enforceDeadline" type="checkbox" name="enforceDeadline" value="enforceDeadline"  class="list-group-item"  checked>Only check work submitted before assignment deadline<br>
-                        <input type = "submit" value = "Autograde" />
+                            <label>
+                            <input id = "enforceDeadline" type="checkbox" name="enforceDeadline" value="enforceDeadline" class="big-checkbox" checked>
+                            Only check work submitted before assignment deadline</label>
+                        <input type = "submit" class="btn btn-primary" value = "Autograde and Display Totals" />
                         <!--<button id="autogradebutton"  class="list-group-item" onclick="function(event){event.preventDefault(); autoGrade(event);}">Autograde</button>-->
 
                     </form>
             </div>
 
-            <div id="calculateTotalsForm" style="text-align: center; visibility: hidden;">
-                    <form>
-                        <input type = "submit" value = "Calculate Totals" />
-                    </form>
-            </div>
-
-            <div id="assignmentTotalform" style="text-align: center; visibility: hidden;">
+            <div id="assignmentTotalform" style="text-align: center; visibility: hidden; background-color: rgba(219,103,14,.71); margin: 10px; padding: 5px; border-radius: 10px;">
+                    <strong>Override student score for whole assignment.</strong>
                     <form>
                         <label for="computed-total-score">computed score</label>
-                        <input id="computed-total-score" type="text" class="form-control" value= ""/>
-                        <label for="manual-total-score">manual score</label>
+                        <input id="computed-total-score" type="text" class="form-control" value= "" readonly/>
+                        <label for="manual-total-score">manual override score</label>
                         <input id="manual-total-score" type="text" class="form-control" value= ""/>
-                        <input type="submit" value="Save Manual Total" />
+                        <input type="submit" value="Save Manual Total" class="btn btn-default" style="margin-top: 5px;"/>
                     </form>
              </div>
 
-            <button id="releasebutton" style="text-align: center; visibility: hidden;" class="list-group-item" onclick="release_grades();">Release Grades</button>
+            <button id="releasebutton" style="text-align: center; visibility: hidden;" class="list-group-item btn btn-success" onclick="toggle_release_grades();">Release Grades</button>
 
 
     </div>
@@ -134,6 +117,10 @@
     chapters = JSON.parse(chapters);
     var students = null;
     var assignmentids = "{{=assignmentids}}".replace(/&#x27;/g,'"');
+    var assignment_deadlines = "{{=assignment_deadlines}}".replace(/&#x27;/g,'"');
+    var question_points = {{=XML(question_points)}};
+    assignment_deadlines = JSON.parse(assignment_deadlines);
+
     $('#autogradingform').submit(function (event) {
         event.preventDefault();
         autoGrade();

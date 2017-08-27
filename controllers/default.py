@@ -6,7 +6,12 @@ import os
 import requests
 from urllib import unquote
 from urllib2 import HTTPError
+import logging
 from gluon.restricted import RestrictedError
+
+logger = logging.getLogger(settings.logger)
+logger.setLevel(settings.log_level)
+
 def user():
     # this is kinda hacky but it's the only way I can figure out how to pre-populate
     # the course_id field
@@ -88,8 +93,8 @@ def user():
                     db.executesql('''
                        INSERT INTO user_sub_chapter_progress(user_id, chapter_id,sub_chapter_id, status)
                        SELECT %s, chapters.chapter_label, sub_chapters.sub_chapter_label, -1
-                       FROM chapters, sub_chapters where sub_chapters.chapter_id = chapters.id and chapters.course_id = '%s';
-                    ''' % (auth.user.id, auth.user.course_name))
+                       FROM chapters, sub_chapters where sub_chapters.chapter_id = chapters.id and chapters.course_id = %s;
+                    ''', (auth.user.id, auth.user.course_name))
             else:
                 session.flash = 'This course is not set up for tracking progress'
             # Add user to default section for course.
@@ -104,7 +109,7 @@ def user():
 
     if 'login' in request.args(0):
         # add info text re: using local auth. CSS styled to match text on Janrain form
-        sign_in_text = TR(TD('Sign in with your Runestone Interactive account', _colspan='3'), _id='sign_in_text')
+        sign_in_text = TR(TD('Sign in with your Runestone Academy account', _colspan='3'), _id='sign_in_text')
         usernamewarn = TR(TD('Your username is NOT your email address', _colspan='3') )
         form[0][0].insert(0, usernamewarn)
         form[0][0].insert(0, sign_in_text)
@@ -302,9 +307,6 @@ def reportabug():
 def sendreport():
     # settings.github_token should be set to a valid Github access token
     # that has full repo access in models/1.py
-    if request.vars['nospam'] != '42':
-        session.flash = 'Report rejected you are not human'
-        redirect('/%s/default/' % request.application)
 
     if request.vars['bookerror'] == 'on':
         basecourse = db(db.courses.course_name == request.vars['coursename']).select().first().base_course
@@ -326,11 +328,13 @@ def sendreport():
     body = 'Error reported in course ' + coursename + ' on page ' + pagename + ' by user ' + userinfo + '\n' + details
     issue = {'title': request.vars['bugtitle'],
              'body': body}
+    logger.debug("POSTING ISSUE %s ", issue)
     r = reqsession.post(url, json.dumps(issue))
     if r.status_code == 201:
         session.flash = 'Successfully created Issue "%s"' % request.vars['bugtitle']
     else:
         session.flash = 'Could not create Issue "%s"' % request.vars['bugtitle']
+    logger.debug("POST STATUS = %s",r.status_code)
 
     courseCheck = 0
     if auth.user:
