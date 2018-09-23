@@ -337,17 +337,20 @@ def practice():
         students = db((db.auth_user.course_name == auth.user.course_name)).select()
 
         for student in students:
-            spacing = 0
-            interleaving = 0
-            if randint(0, 1) == 1:
-                spacing = 1
-            if randint(0, 1) == 1:
-                interleaving = 1
-            db.user_practice_condition.insert(auth_user_id=student.id,
-                                              course_name=course.course_name,
-                                              spacing=spacing,
-                                              interleaving=interleaving
-                                              )
+            user_practice_conditions = db((db.user_practice_condition.auth_user_id == student.id) &
+                                          (db.user_practice_condition.course_name == student.course_name))
+            if user_practice_conditions.isempty():
+                spacing = 0
+                interleaving = 0
+                if randint(0, 1) == 1:
+                    spacing = 1
+                if randint(0, 1) == 1:
+                    interleaving = 1
+                db.user_practice_condition.insert(auth_user_id=student.id,
+                                                  course_name=course.course_name,
+                                                  spacing=spacing,
+                                                  interleaving=interleaving
+                                                  )
 
     toc = ""
     if flashcard_creation_method == 2:
