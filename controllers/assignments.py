@@ -120,7 +120,7 @@ def _get_practice_data(user, timezoneoffset):
     practice_settings = db(db.course_practice.course_name == user.course_name)
     if practice_settings.isempty() or practice_settings.select().first().end_date is None:
         practice_message1 = "Practice tool is not set up for this course yet."
-        practice_message2 = "Please ask your instructor to set it up."
+        practice_message2 = "Please email Iman <oneweb@umich.edu> and ask him to set it up for the course."
     else:
         practice_settings = practice_settings.select().first()
         practice_start_date = practice_settings.start_date
@@ -132,8 +132,15 @@ def _get_practice_data(user, timezoneoffset):
         # Define how many questions you expect your students practice every day.
         questions_to_complete_day = practice_settings.questions_to_complete_day
         practice_graded = practice_settings.graded
-        spacing = practice_settings.spacing
-        interleaving = practice_settings.interleaving
+
+        user_practice_condition = db((db.user_practice_condition.auth_user_id == auth.user.id) &
+                                     (db.user_practice_condition.course_name == user.course_name))
+        if user_practice_condition.isempty():
+            practice_message1 = "Practice tool is not set up for YOU yet."
+            practice_message2 = "Please email Iman <oneweb@umich.edu> and ask him to set it up for you."
+        else:
+            spacing = user_practice_condition.select().first().spacing
+            interleaving = user_practice_condition.select().first().interleaving
 
         if practice_start_date > now_local.date():
             days_to_start = (practice_start_date - now_local.date()).days
