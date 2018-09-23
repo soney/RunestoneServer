@@ -292,9 +292,9 @@ def practice():
     # If the instructor has created practice for other courses, don't randomize spacing and interleaving for the new
     # course.
     if not any_practice_settings.isempty():
-        any_practice_settings = any_practice_settings.select().first()
-        spacing = any_practice_settings.spacing
-        interleaving = any_practice_settings.interleaving
+        # any_practice_settings = any_practice_settings.select().first()
+        # spacing = any_practice_settings.spacing
+        # interleaving = any_practice_settings.interleaving
 
         #  Now checking to see if there are practice settigns for this course.
         #  If not, stick with the defaults.
@@ -313,14 +313,10 @@ def practice():
             questions_to_complete_day = practice_setting.questions_to_complete_day
             flashcard_creation_method = practice_setting.flashcard_creation_method
             graded = practice_setting.graded
-            spacing = practice_setting.spacing
-            interleaving = practice_setting.interleaving
+            # spacing = practice_setting.spacing
+            # interleaving = practice_setting.interleaving
             already_exists = 1
     else:
-        if randint(0, 1) == 1:
-            spacing = 1
-        if randint(0, 1) == 1:
-            interleaving = 1
         db.course_practice.insert(auth_user_id=auth.user.id,
                                   course_name=course.course_name,
                                   start_date=start_date,
@@ -331,12 +327,27 @@ def practice():
                                   question_points=question_points,
                                   questions_to_complete_day=questions_to_complete_day,
                                   flashcard_creation_method=flashcard_creation_method,
-                                  graded=graded,
-                                  spacing=spacing,
-                                  interleaving=interleaving
+                                  graded=graded
+                                  # spacing=spacing,
+                                  # interleaving=interleaving
                                   )
         practice_settings = db((db.course_practice.auth_user_id == auth.user.id) &
                                (db.course_practice.course_name == course.course_name))
+
+        students = db((db.auth_user.course_name == auth.user.course_name)).select()
+
+        for student in students:
+            spacing = 0
+            interleaving = 0
+            if randint(0, 1) == 1:
+                spacing = 1
+            if randint(0, 1) == 1:
+                interleaving = 1
+            db.user_practice_condition.insert(auth_user_id=student.id,
+                                              course_name=course.course_name,
+                                              spacing=spacing,
+                                              interleaving=interleaving
+                                              )
 
     toc = ""
     if flashcard_creation_method == 2:
@@ -445,9 +456,9 @@ def practice():
                                      question_points=question_points,
                                      questions_to_complete_day=questions_to_complete_day,
                                      flashcard_creation_method=flashcard_creation_method,
-                                     graded=graded,
-                                     spacing=spacing,
-                                     interleaving=interleaving
+                                     graded=graded
+                                     # spacing=spacing,
+                                     # interleaving=interleaving
                                      )
 
         toc = ""
