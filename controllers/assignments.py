@@ -147,7 +147,7 @@ def _get_practice_data(user, timezoneoffset):
             practice_message1 = "Practice period will start in this course on " + str(practice_start_date) + "."
             practice_message2 = "Please return in " + str(days_to_start) + " day" + "." if days_to_start == 1 else "s."
         else:
-            # Check whether falshcards are created for this user in the current course.
+            # Check whether flashcards are created for this user in the current course.
             flashcards = db((db.user_topic_practice.course_name == user.course_name) &
                             (db.user_topic_practice.user_id == user.id))
             if flashcards.isempty():
@@ -200,7 +200,7 @@ def _get_practice_data(user, timezoneoffset):
                                     timezoneoffset=timezoneoffset
                                 )
 
-            # Retrieve all the falshcards created for this user in the current course and order them by their order of
+            # Retrieve all the flashcards created for this user in the current course and order them by their order of
             # creation.
             flashcards = db((db.user_topic_practice.course_name == user.course_name) &
                             (db.user_topic_practice.user_id == user.id)).select(orderby=db.user_topic_practice.id)
