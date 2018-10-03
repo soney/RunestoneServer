@@ -753,6 +753,9 @@ def practice():
             f_card["mastery_percent"] = int(f_card["remaining_days"])
         else:
             # The maximum q is 5.0 and the minimum e_factor that indicates mastery of the topic is 2.5. `5 * 2.5 = 12.5`
+            # I learned that when students under the blocking condition answer something wrong multiple times,
+            # it becomes too difficult for them to pass it and the system asks them the same question many times
+            # (because most subchapters have only one question). To solve this issue, I changed the blocking formula.
             f_card["mastery_percent"] = int(100 * f_card.user_topic_practice.e_factor *
                                             f_card.user_topic_practice.q / 10)
             if f_card["mastery_percent"] > 100:
