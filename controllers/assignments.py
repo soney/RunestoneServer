@@ -217,7 +217,7 @@ def _get_practice_data(user, timezoneoffset):
                 available_flashcards_num = len(presentable_flashcards)
             else:
                 # Select only those that are not mastered yet.
-                presentable_flashcards = [f for f in flashcards if (f.e_factor * f.q <= 10 and f.q != -1)]
+                presentable_flashcards = [f for f in flashcards if (f.e_factor * f.q < 10 and f.q != -1)]
                 available_flashcards_num = len(presentable_flashcards)
                 if len(presentable_flashcards) > 0:
                     # It's okay to continue with the next chapter if there is no more question in the current chapter
