@@ -117,9 +117,6 @@ def _get_practice_data(user, timezoneoffset):
 
     now = datetime.datetime.utcnow()
     now_local = now - datetime.timedelta(hours=timezoneoffset)
-    print("timezoneoffset:", timezoneoffset)
-    print("now.date():", now.date())
-    print("now_local.date():", now_local.date())
 
     # Since each authenticated user has only one active course, we retrieve the course this way.
     course = db(db.courses.id == user.course_id).select().first()
