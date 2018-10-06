@@ -181,27 +181,55 @@ def runlog():    # Log errors and runs with code
             event = request.vars.event
         else:
             event = 'activecode'
-    try:
-        db.useinfo.insert(sid=sid, act=act, div_id=div_id, event=event, timestamp=ts, course_id=course)
-    except Exception as e:
-        logger.debug("probable Too Long problem trying to insert sid={} act={} div_id={} event={} timestamp={} course_id={}".format(sid, act, div_id, event, ts, course))
+    num_tries = 3
+    done = False
+    while num_tries > 0 and not done:
+        try:
+            db.useinfo.insert(sid=sid, act=act, div_id=div_id, event=event, timestamp=ts, course_id=course)
+            done = True
+        except Exception as e:
+            logger.error("probable Too Long problem trying to insert sid={} act={} div_id={} event={} timestamp={} course_id={}".format(sid, act, div_id, event, ts, course))
+            num_tries -= 1
+    if num_tries == 0:
+        raise Exception("Runlog Failed to insert into useinfo")
+    
+    num_tries = 3
+    done = False
+    while num_tries > 0 and not done:
+        try:
+            dbid = db.acerror_log.insert(sid=sid,
+                                        div_id=div_id,
+                                        timestamp=ts,
+                                        course_id=course,
+                                        code=pre+code+post,
+                                        emessage=error_info)
+            done = True
+        except:
+            logger.error("INSERT into acerror_log FAILED retrying")
+            num_tries -= 1
+    if num_tries == 0:
+        raise Exception("Runlog Failed to insert into acerror_log")
 
-    dbid = db.acerror_log.insert(sid=sid,
-                                 div_id=div_id,
-                                 timestamp=ts,
-                                 course_id=course,
-                                 code=pre+code+post,
-                                 emessage=error_info)
     #lintAfterSave(dbid, code, div_id, sid)
     if auth.user:
         if 'to_save' in request.vars and (request.vars.to_save == "True" or request.vars.to_save == "true"):
-            db.code.insert(sid=sid,
-                acid=div_id,
-                code=code,
-                emessage=error_info,
-                timestamp=ts,
-                course_id=auth.user.course_id,
-                language=request.vars.lang)
+            num_tries = 3
+            done = False
+            while num_tries > 0 and not done:
+                try:
+                    db.code.insert(sid=sid,
+                        acid=div_id,
+                        code=code,
+                        emessage=error_info,
+                        timestamp=ts,
+                        course_id=auth.user.course_id,
+                        language=request.vars.lang)
+                    done = True 
+                except:
+                    num_tries -= 1
+                    logger.error("INSERT into code FAILED retrying")
+            if num_tries == 0:
+                raise Exception("Runlog Failed to insert into code")
 
     response.headers['content-type'] = 'application/json'
     res = {'log':True}
@@ -307,17 +335,17 @@ def getuser():
                    'cohortId': auth.user.cohort_id, 'donated': auth.user.donated,
                    'isInstructor': verifyInstructorStatus(auth.user.course_name, auth.user.id)}
             session.timezoneoffset = request.vars.timezoneoffset
-            logger.debug("setting timezone offset in session %s", session.timezoneoffset, "hours.")
+            logger.debug("setting timezone offset in session %s hours" % session.timezoneoffset)
         except:
             res = dict(redirect=auth.settings.login_url)  # ?_next=....
     else:
         res = dict(redirect=auth.settings.login_url) #?_next=....
-    logger.debug("returning login info: %s", res)
+    logger.debug("returning login info: %s" % res)
     return json.dumps([res])
 
 def set_tz_offset():
     session.timezoneoffset = request.vars.timezoneoffset
-    logger.debug("setting timezone offset in session %s", session.timezoneoffset, "hours.")
+    logger.debug("setting timezone offset in session %s hours" % session.timezoneoffset)
     return "done"
 
 
