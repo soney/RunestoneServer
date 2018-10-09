@@ -226,6 +226,21 @@ def _get_practice_data(user, timezoneoffset):
                     if days_to_add > 0:
                         f["blocking_eligible_date"] += datetime.timedelta(days=days_to_add)
 
+            # We need the following `for` loop to make sure the number of repetitions for both blocking and interleaving
+            # groups are the same.
+            for f in flashcards:
+                f_logs = db((db.user_topic_practice_log.course_name == user.course_name) &
+                            (db.user_topic_practice_log.user_id == user.id) &
+                            (db.user_topic_practice_log.chapter_label == f.chapter_label) &
+                            (db.user_topic_practice_log.sub_chapter_label == f.sub_chapter_label)
+                            ).select(orderby=db.user_topic_practice_log.end_practice)
+                f["blocking_eligible_date"] = f.next_eligible_date
+                if len(f_logs) > 0:
+                    days_to_add = sum([f_log.i_interval for f_log in f_logs[0:-1]])
+                    days_to_add -= (f_logs[-1].end_practice - f_logs[0].end_practice).days
+                    if days_to_add > 0:
+                        f["blocking_eligible_date"] += datetime.timedelta(days=days_to_add)
+
             if interleaving == 1:
                 # Select only those where enough time has passed since last presentation.
                 presentable_flashcards = [f for f in flashcards if now_local.date() >= f.next_eligible_date]
