@@ -1395,7 +1395,6 @@ def _get_toc_and_questions():
                 except:
                     # a badly formed "topic" for the question; just ignore it
                     logger.info("Bad Topic: {}".format(q.topic))
-                    print("\nBad Topic: {}".format(q.topic))
                     topic_not_found = True
                 try:
                     chapter = db((db.chapters.course_id == auth.user.course_name) &
@@ -1408,7 +1407,6 @@ def _get_toc_and_questions():
                 except:
                     # topic's chapter and subchapter are not in the book; ignore this topic
                     logger.info("Missing Chapter {} or Subchapter {} for topic {}".format(chap, subch, q.topic))
-                    print("\nMissing Chapter {} or Subchapter {} for topic {}".format(chap, subch, q.topic))
                     topic_not_found = True
 
             if topic_not_found:
@@ -1426,7 +1424,6 @@ def _get_toc_and_questions():
                 except:
                     # topic's chapter and subchapter are not in the book; ignore this topic
                     logger.info("Missing Chapter {} or Subchapter {}".format(chap, subch))
-                    print("\nMissing Chapter {} or Subchapter {}".format(chap, subch))
                     topic_not_found = True
 
             if not topic_not_found:
