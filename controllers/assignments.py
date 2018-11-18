@@ -350,9 +350,14 @@ def download_time_spent():
 @auth.requires(lambda: verifyInstructorStatus(auth.user.course_name, auth.user), requires_login=True)
 def calculate_totals():
     assignment_name = request.vars.assignment
+    assignment_id = request.vars.assignment_id
     sid = request.vars.get('sid', None)
-    assignment = db(
-        (db.assignments.name == assignment_name) & (db.assignments.course == auth.user.course_id)).select().first()
+    if assignment_id:
+        assignment = db(
+            (db.assignments.id == assignment_id) & (db.assignments.course == auth.user.course_id)).select().first()
+    else:
+        assignment = db(
+            (db.assignments.name == assignment_name) & (db.assignments.course == auth.user.course_id)).select().first()
     if assignment:
         return json.dumps(
             do_calculate_totals(assignment, auth.user.course_id, auth.user.course_name, sid, db, settings))
@@ -368,10 +373,16 @@ def autograde():
     question_name = request.vars.get('question', None)
     enforce_deadline = request.vars.get('enforceDeadline', None)
     assignment_name = request.vars.assignment
+    assignment_id = request.vars.assignment_id
     timezoneoffset = session.timezoneoffset if 'timezoneoffset' in session else None
 
-    assignment = db(
-        (db.assignments.name == assignment_name) & (db.assignments.course == auth.user.course_id)).select().first()
+    print(request.vars)
+    if assignment_id:
+        assignment = db(
+            (db.assignments.id == assignment_id) & (db.assignments.course == auth.user.course_id)).select().first()
+    else:
+        assignment = db(
+            (db.assignments.name == assignment_name) & (db.assignments.course == auth.user.course_id)).select().first()
     if assignment:
         count = do_autograde(assignment, auth.user.course_id, auth.user.course_name, sid, question_name,
                              enforce_deadline, timezoneoffset, db, settings)
@@ -613,7 +624,12 @@ def doAssignment():
                 course_id=auth.user.course_name,
                 readings=readings,
                 questions_score=questions_score,
-                readings_score=readings_score)
+                readings_score=readings_score,
+                autogradingUrl=URL('assignments', 'autograde'),
+                gradeRecordingUrl=URL('assignments', 'record_grade'),
+                calcTotalsURL=URL('assignments', 'calculate_totals'),
+                student_id=auth.user.id,
+                )
 
 
 def chooseAssignment():

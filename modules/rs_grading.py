@@ -421,13 +421,14 @@ def _get_students(course_id, sid = None, db=None):
         # sid which is passed in is a username, not a row id
         student_rows = db((db.user_courses.course_id == course_id) &
                           (db.user_courses.user_id == db.auth_user.id) &
-                          (db.auth_user.username == sid)
+                          (db.auth_user.id == sid)
                           ).select(db.auth_user.username, db.auth_user.id)
     else:
         # get all student usernames for this course
         student_rows = db((db.user_courses.course_id == course_id) &
                           (db.user_courses.user_id == db.auth_user.id)
                           ).select(db.auth_user.username, db.auth_user.id)
+
     return student_rows
 
 def send_lti_grade(assignment_points, score, consumer, secret, outcome_url, result_sourcedid):
@@ -571,7 +572,6 @@ def do_autograde(assignment, course_id, course_name, sid, question_name, enforce
                 _autograde_one_q(course_name, s, qdiv, points, question_type,
                                  deadline=deadline, autograde=autograde, which_to_grade=which_to_grade, db=db)
                 count += 1
-
     # _profile(start, "after calls to _autograde_one_q")
     return count
 

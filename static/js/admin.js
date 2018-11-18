@@ -133,6 +133,7 @@ function getSelectedItem(type) {
     }
 }
 
+
 function autoGrade() {
     var assignment = getSelectedItem("assignment")
     var question = getSelectedItem("question")
