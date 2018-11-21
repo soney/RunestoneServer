@@ -366,7 +366,7 @@ def calculate_totals():
     return json.dumps(_calculate_totals(sid, assignment_name=assignment_name))
 
 
-def _autograde(sid, question_name, enforce_deadline=False, assignment_name=None, assignment_id=None, timezoneoffset=None):
+def _autograde(sid, question_name=None, enforce_deadline=False, assignment_name=None, assignment_id=None, timezoneoffset=None):
     if assignment_id:
         assignment = db(
             (db.assignments.id == assignment_id) & (db.assignments.course == auth.user.course_id)).select().first()
@@ -389,37 +389,40 @@ def self_autograde():
     if not settings.coursera_mode:
         return json.dumps({'success': False, 'message': "Not in Coursera mode; can't self_autograde"})
     assignment_id = request.vars.assignment_id
-    question_name = request.vars.get('question', None)
     timezoneoffset = session.timezoneoffset if 'timezoneoffset' in session else None
 
     res = _autograde(auth.user.id,
-                     question_name,
                      assignment_id=assignment_id,
                      timezoneoffset=timezoneoffset)
-    if res['success']:
+    if not res['success']:
+        session.flash = "Failed to autograde individual questions for user id {} for assignment {}".format(auth.user.id, assignment_id)
+    else:
         res2 = _calculate_totals(auth.user.id, assignment_id=assignment_id)
-        if res2['success']:
-            # send lti grades
+        if not res2['success']:
+            session.flash = "Failed to compute totals for user id {} for assignment {}".format(auth.user.id, assignment_id)
+        else:
+            # try to send lti grades
             assignment = _get_assignment(assignment_id)
-            lti_record = _get_lti_record(session.oauth_consumer_key)
-            if assignment and lti_record:
+            if not assignment:
+                session.flash = "Failed to find assignment object for assignment {}".format(assignment_id)
+            else:
                 grade = db(
                     (db.grades.auth_user == auth.user.id) &
                     (db.grades.assignment == assignment_id)).select().first()
-                if grade and grade.lis_result_sourcedid and grade.lis_outcome_url:
-                    send_lti_grade(assignment.points,
-                                   score=grade.score,
-                                   consumer=lti_record.consumer,
-                                   secret=lti_record.secret,
-                                   outcome_url=grade.lis_outcome_url,
-                                   result_sourcedid=grade.lis_result_sourcedid)
+                if not grade:
+                    session.flash = "Failed to find grade object for user {} and assignment {}".format(auth.user.id, assignment_id)
                 else:
-                    return json.dumps({'success': False,
-                                       'message': 'Grade not successfully recorded. Please report an error.',
-                                       'assignment_id': assignment_id,
-                                       'lis_result_sourcedid': grade.lis_result_sourcedid,
-                                       'score': grade.score,
-                                       'sid': auth.user.id})
+                    lti_record = _get_lti_record(session.oauth_consumer_key)
+                    if (not lti_record) or (not grade.lis_result_sourcedid) or (not grade.lis_outcome_url):
+                        session.flash = "Failed to send grade back to LMS (Coursera, Canvas, Blackboard...), probably because the student accessed this assignment directly rather than using a link from the LMS."
+                    else:
+                        # really sending
+                        send_lti_grade(assignment.points,
+                                       score=grade.score,
+                                       consumer=lti_record.consumer,
+                                       secret=lti_record.secret,
+                                       outcome_url=grade.lis_outcome_url,
+                                       result_sourcedid=grade.lis_result_sourcedid)
     return json.dumps({})
 
 @auth.requires(lambda: verifyInstructorStatus(auth.user.course_name, auth.user), requires_login=True)
