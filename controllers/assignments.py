@@ -406,13 +406,20 @@ def self_autograde():
                 grade = db(
                     (db.grades.auth_user == auth.user.id) &
                     (db.grades.assignment == assignment_id)).select().first()
-                if grade:
+                if grade and grade.lis_result_sourcedid and grade.lis_outcome_url:
                     send_lti_grade(assignment.points,
                                    score=grade.score,
                                    consumer=lti_record.consumer,
                                    secret=lti_record.secret,
                                    outcome_url=grade.lis_outcome_url,
                                    result_sourcedid=grade.lis_result_sourcedid)
+                else:
+                    return json.dumps({'success': False,
+                                       'message': 'Grade not successfully recorded. Please report an error.',
+                                       'assignment_id': assignment_id,
+                                       'lis_result_sourcedid': grade.lis_result_sourcedid,
+                                       'score': grade.score,
+                                       'sid': auth.user.id})
     return json.dumps({})
 
 @auth.requires(lambda: verifyInstructorStatus(auth.user.course_name, auth.user), requires_login=True)
