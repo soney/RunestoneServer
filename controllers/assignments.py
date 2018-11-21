@@ -153,8 +153,8 @@ def _get_practice_data(user, timezoneoffset):
                             (db.user_topic_practice.user_id == user.id))
             if flashcards.isempty():
                 if flashcard_creation_method == 0:
-                    practice_message1 = ("Only pages that you mark as complete, at the bottom of the page, are the" +
-                                         " ones that are eligible for practice.")
+                    practice_message1 = ("Only pages that you mark as complete, at the bottom of those pages, are " +
+                                         "eligible for practice.")
                     practice_message2 = ("You've not marked any pages as complete yet. Please mark some pages first" +
                                          " to practice them.")
                 else:
