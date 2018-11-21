@@ -432,7 +432,10 @@ def _get_students(course_id, sid = None, db=None):
     return student_rows
 
 def send_lti_grade(assignment_points, score, consumer, secret, outcome_url, result_sourcedid):
-    pct = score / float(assignment_points) if assignment_points else 0.0
+    try:
+        pct = score / float(assignment_points)
+    except:
+        pct = 0.0
     # print "pct", pct
 
     # send it back to the LMS
