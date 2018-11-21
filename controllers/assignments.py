@@ -811,7 +811,7 @@ def practice():
                                                      float(session.timezoneoffset) if 'timezoneoffset' in session else 0)
 
     if message1 != "":
-        session.flash = message1 + " " + message2
+        # session.flash = message1 + " " + message2
         return redirect(URL('practiceNotStartedYet',
                             vars=dict(message1=message1,
                                       message2=message2)))
