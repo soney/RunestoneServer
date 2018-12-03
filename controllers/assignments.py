@@ -414,7 +414,7 @@ def self_autograde():
                 else:
                     lti_record = _get_lti_record(session.oauth_consumer_key)
                     if (not lti_record) or (not grade.lis_result_sourcedid) or (not grade.lis_outcome_url):
-                        session.flash = "Failed to send grade back to LMS (Coursera, Canvas, Blackboard...), probably because the student accessed this assignment directly rather than using a link from the LMS."
+                        session.flash = "Failed to send grade back to LMS (Coursera, Canvas, Blackboard...), probably because the student accessed this assignment directly rather than using a link from the LMS, or because there is an error in the assignment link in the LMS. Please report this error."
                     else:
                         # really sending
                         send_lti_grade(assignment.points,
