@@ -133,7 +133,6 @@ function getSelectedItem(type) {
     }
 }
 
-
 function autoGrade() {
     var assignment = getSelectedItem("assignment")
     var question = getSelectedItem("question")
@@ -156,19 +155,16 @@ function autoGrade() {
     }
 
     if (assignment != null && question === null && studentID == null) {
-        let i = 0;
         for (let s in students) {
             params.data.sid = s;
             params.async = false;
             let res = jQuery.ajax(params);
-            setTimeout(function(s) {
-                $("#autogradingform").append(`${res.responseJSON.message} for ${s} </br>`)
-            }, 10, s);
+            $("#autogradingform").append(`${res.responseJSON.message} for ${s} </br>`)
         }
         calculateTotals();
         $("#autogradesubmit").prop("disabled", false);
     } else {
-        jQuery.ajax(params).always(function () {
+        jquery.axax(params).always(function () {
             calculateTotals();
             $("#autogradesubmit").prop("disabled", false);
         });
