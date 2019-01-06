@@ -136,9 +136,11 @@
         </div>
     {{pass}}
 </div>
+{{ if settings.coursera_mode: }}
 <div style="text-align:center">
     <button class="btn btn-lg buttonAskCompletion" id="gradeMeButton"> Grade Me</button>
 </div>
+{{ pass }}
 </div>
 <script>
     //console.log(document.getElementsByClassName('nav nav-tabs'))
@@ -170,11 +172,12 @@
         let change = $.parseHTML(unescapedhtml, keepScripts=true);
         $div.append(change);
     }
+{{ if settings.coursera_mode: }}
 
     $("#gradeMeButton").on("click", function(){
         $('#gradeMeButton').css('visibility', 'hidden');
         selfGrade({{=assignment['id']}}, {{=student_id}})});
-
+{{ pass }}
 
 
 
