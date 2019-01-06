@@ -347,49 +347,91 @@ def download_time_spent():
     response.view='generic.csv'
     return dict(filename='grades_download.csv', csvdata=rows, field_names=field_names+type_names+assignment_names)
 
+def _calculate_totals(sid, assignment_name = None, assignment_id = None):
+    if assignment_id:
+        assignment = db(
+            (db.assignments.id == assignment_id) & (db.assignments.course == auth.user.course_id)).select().first()
+    else:
+        assignment = db(
+            (db.assignments.name == assignment_name) & (db.assignments.course == auth.user.course_id)).select().first()
+    if assignment:
+        return do_calculate_totals(assignment, auth.user.course_id, auth.user.course_name, sid, db, settings)
+    else:
+        return {'success': False, 'message': "Select an assignment before trying to calculate totals."}
 
 @auth.requires(lambda: verifyInstructorStatus(auth.user.course_name, auth.user), requires_login=True)
 def calculate_totals():
     assignment_name = request.vars.assignment
-    assignment_id = request.vars.assignment_id
     sid = request.vars.get('sid', None)
+    return json.dumps(_calculate_totals(sid, assignment_name=assignment_name))
+
+
+def _autograde(sid, question_name, enforce_deadline=False, assignment_name=None, assignment_id=None, timezoneoffset=None):
     if assignment_id:
         assignment = db(
             (db.assignments.id == assignment_id) & (db.assignments.course == auth.user.course_id)).select().first()
     else:
         assignment = db(
             (db.assignments.name == assignment_name) & (db.assignments.course == auth.user.course_id)).select().first()
-    if assignment:
-        return json.dumps(
-            do_calculate_totals(assignment, auth.user.course_id, auth.user.course_name, sid, db, settings))
-    else:
-        return json.dumps({'success': False, 'message': "Select an assignment before trying to calculate totals."})
 
+    if assignment:
+        count = do_autograde(assignment, auth.user.course_id, auth.user.course_name, sid, question_name,
+                             enforce_deadline, timezoneoffset, db, settings)
+        return {'success': True, 'message': "autograded {} items".format(count)}
+    else:
+        return {'success': False, 'message': "Select an assignment before trying to autograde."}
+
+def _get_assignment(assignment_id):
+    return db(db.assignments.id == assignment_id).select().first()
+
+@auth.requires_login()
+def self_autograde():
+    if not settings.coursera_mode:
+        return json.dumps({'success': False, 'message': "Not in Coursera mode; can't self_autograde"})
+    assignment_id = request.vars.assignment_id
+    question_name = request.vars.get('question', None)
+    timezoneoffset = session.timezoneoffset if 'timezoneoffset' in session else None
+
+    res = _autograde(auth.user.id,
+                     question_name,
+                     assignment_id=assignment_id,
+                     timezoneoffset=timezoneoffset)
+    if res['success']:
+        res2 = _calculate_totals(auth.user.id, assignment_id=assignment_id)
+        if res2['success']:
+            # send lti grades
+            assignment = _get_assignment(assignment_id)
+            lti_record = _get_lti_record(session.oauth_consumer_key)
+            if assignment and lti_record:
+                grade = db(
+                    (db.grades.auth_user == auth.user.id) &
+                    (db.grades.assignment == assignment_id)).select().first()
+                if grade:
+                    send_lti_grade(assignment.points,
+                                   score=grade.score,
+                                   consumer=lti_record.consumer,
+                                   secret=lti_record.secret,
+                                   outcome_url=grade.lis_outcome_url,
+                                   result_sourcedid=grade.lis_result_sourcedid)
+    return json.dumps({})
 
 @auth.requires(lambda: verifyInstructorStatus(auth.user.course_name, auth.user), requires_login=True)
 def autograde():
     ### This endpoint is hit to autograde one or all students or questions for an assignment
-
     sid = request.vars.get('sid', None)
     question_name = request.vars.get('question', None)
     enforce_deadline = request.vars.get('enforceDeadline', None)
     assignment_name = request.vars.assignment
-    assignment_id = request.vars.assignment_id
     timezoneoffset = session.timezoneoffset if 'timezoneoffset' in session else None
 
-    print(request.vars)
-    if assignment_id:
-        assignment = db(
-            (db.assignments.id == assignment_id) & (db.assignments.course == auth.user.course_id)).select().first()
-    else:
-        assignment = db(
-            (db.assignments.name == assignment_name) & (db.assignments.course == auth.user.course_id)).select().first()
-    if assignment:
-        count = do_autograde(assignment, auth.user.course_id, auth.user.course_name, sid, question_name,
-                             enforce_deadline, timezoneoffset, db, settings)
-        return json.dumps({'message': "autograded {} items".format(count)})
-    else:
-        return json.dumps({'success': False, 'message': "Select an assignment before trying to autograde."})
+    return json.dumps(_autograde(sid,
+                                 question_name,
+                                 enforce_deadline=enforce_deadline,
+                                 assignment_name=assignment_name,
+                                 timezoneoffset=timezoneoffset))
+
+
+
 
 @auth.requires(lambda: verifyInstructorStatus(auth.user.course_name, auth.user), requires_login=True)
 def record_grade():
@@ -626,7 +668,7 @@ def doAssignment():
                 readings=readings,
                 questions_score=questions_score,
                 readings_score=readings_score,
-                autogradingUrl=URL('assignments', 'autograde'),
+                autogradingUrl=URL('assignments', 'self_autograde'),
                 gradeRecordingUrl=URL('assignments', 'record_grade'),
                 calcTotalsURL=URL('assignments', 'calculate_totals'),
                 student_id=auth.user.id,
