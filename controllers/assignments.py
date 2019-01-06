@@ -153,8 +153,8 @@ def _get_practice_data(user, timezoneoffset):
                             (db.user_topic_practice.user_id == user.id))
             if flashcards.isempty():
                 if flashcard_creation_method == 0:
-                    practice_message1 = ("Only pages that you mark as complete, at the bottom of those pages, are " +
-                                         "eligible for practice.")
+                    practice_message1 = ("Only pages that you mark as complete, at the bottom of the page, are the" +
+                                         " ones that are eligible for practice.")
                     practice_message2 = ("You've not marked any pages as complete yet. Please mark some pages first" +
                                          " to practice them.")
                 else:
@@ -366,7 +366,7 @@ def calculate_totals():
     return json.dumps(_calculate_totals(sid, assignment_name=assignment_name))
 
 
-def _autograde(sid, question_name=None, enforce_deadline=False, assignment_name=None, assignment_id=None, timezoneoffset=None):
+def _autograde(sid, question_name, enforce_deadline=False, assignment_name=None, assignment_id=None, timezoneoffset=None):
     if assignment_id:
         assignment = db(
             (db.assignments.id == assignment_id) & (db.assignments.course == auth.user.course_id)).select().first()
@@ -389,40 +389,30 @@ def self_autograde():
     if not settings.coursera_mode:
         return json.dumps({'success': False, 'message': "Not in Coursera mode; can't self_autograde"})
     assignment_id = request.vars.assignment_id
+    question_name = request.vars.get('question', None)
     timezoneoffset = session.timezoneoffset if 'timezoneoffset' in session else None
 
     res = _autograde(auth.user.id,
+                     question_name,
                      assignment_id=assignment_id,
                      timezoneoffset=timezoneoffset)
-    if not res['success']:
-        session.flash = "Failed to autograde individual questions for user id {} for assignment {}".format(auth.user.id, assignment_id)
-    else:
+    if res['success']:
         res2 = _calculate_totals(auth.user.id, assignment_id=assignment_id)
-        if not res2['success']:
-            session.flash = "Failed to compute totals for user id {} for assignment {}".format(auth.user.id, assignment_id)
-        else:
-            # try to send lti grades
+        if res2['success']:
+            # send lti grades
             assignment = _get_assignment(assignment_id)
-            if not assignment:
-                session.flash = "Failed to find assignment object for assignment {}".format(assignment_id)
-            else:
+            lti_record = _get_lti_record(session.oauth_consumer_key)
+            if assignment and lti_record:
                 grade = db(
                     (db.grades.auth_user == auth.user.id) &
                     (db.grades.assignment == assignment_id)).select().first()
-                if not grade:
-                    session.flash = "Failed to find grade object for user {} and assignment {}".format(auth.user.id, assignment_id)
-                else:
-                    lti_record = _get_lti_record(session.oauth_consumer_key)
-                    if (not lti_record) or (not grade.lis_result_sourcedid) or (not grade.lis_outcome_url):
-                        session.flash = "Failed to send grade back to LMS (Coursera, Canvas, Blackboard...), probably because the student accessed this assignment directly rather than using a link from the LMS, or because there is an error in the assignment link in the LMS. Please report this error."
-                    else:
-                        # really sending
-                        send_lti_grade(assignment.points,
-                                       score=grade.score,
-                                       consumer=lti_record.consumer,
-                                       secret=lti_record.secret,
-                                       outcome_url=grade.lis_outcome_url,
-                                       result_sourcedid=grade.lis_result_sourcedid)
+                if grade:
+                    send_lti_grade(assignment.points,
+                                   score=grade.score,
+                                   consumer=lti_record.consumer,
+                                   secret=lti_record.secret,
+                                   outcome_url=grade.lis_outcome_url,
+                                   result_sourcedid=grade.lis_result_sourcedid)
     return json.dumps({})
 
 @auth.requires(lambda: verifyInstructorStatus(auth.user.course_name, auth.user), requires_login=True)
@@ -670,12 +660,6 @@ def doAssignment():
             questionslist.append(info)
             questions_score += info['score']
 
-    # put readings into a session variable, to enable next/prev button
-    readings_names = []
-    for chapname in readings:
-        readings_names = readings_names + ["{}/{}.html".format(d['chapter'], d['subchapter']) for d in readings[chapname]['subchapters']]
-    session.readings = readings_names
-
     return dict(course=course,
                 course_name=auth.user.course_name,
                 assignment=assignment,
@@ -707,8 +691,9 @@ def chooseAssignment():
 def _get_lti_record(oauth_consumer_key):
     return db(db.lti_keys.consumer == oauth_consumer_key).select().first()
 
-def _get_course_practice_record(course_name):
-    return db(db.course_practice.course_name == course_name).select().first()
+def _get_course_practice_record(course_name, user_id):
+    return db((db.course_practice.course_name == course_name) &
+              (db.course_practice.auth_user_id == user_id)).select().first()
 
 def _get_student_practice_grade(sid, course_name):
     return db((db.practice_grades.auth_user==sid) &
@@ -775,7 +760,8 @@ def settz_then_practice():
 
 # Gets invoked from practice if there is no record in course_practice for this course or the practice is not started.
 def practiceNotStartedYet():
-    return dict(message1=bleach.clean(request.vars.message1 or ""), message2=bleach.clean(request.vars.message2 or ""))
+    return dict(course_id=auth.user.course_name,
+                message1=bleach.clean(request.vars.message1), message2=bleach.clean(request.vars.message2))
 
 
 # Gets invoked when the student requests practicing topics.
@@ -815,7 +801,7 @@ def practice():
                                                      float(session.timezoneoffset) if 'timezoneoffset' in session else 0)
 
     if message1 != "":
-        # session.flash = message1 + " " + message2
+        session.flash = message1 + " " + message2
         return redirect(URL('practiceNotStartedYet',
                             vars=dict(message1=message1,
                                       message2=message2)))
@@ -860,31 +846,20 @@ def practice():
         elif f_card["mastery_percent"] >= 25:
             f_card["mastery_color"] = "warning"
 
-    # If an instructor removes the practice flag from a question in the middle of the semester
-    # and students are in the middle of practicing it, the following code makes sure the practice tool does not crash.
-    questions = []
-    if len(presentable_flashcards) > 0:
+    # If the student has any flashcards to practice and has not practiced enough to get their points for today or they
+    # have intrinsic motivation to practice beyond what they are expected to do.
+    if available_flashcards_num > 0 and (practiced_today_count != questions_to_complete_day or
+                                            request.vars.willing_to_continue or
+                                            spacing == 0):
         # Present the first one.
         flashcard = presentable_flashcards[0]
         # Get eligible questions.
         questions = _get_qualified_questions(course.base_course,
                                              flashcard.chapter_label,
                                              flashcard.sub_chapter_label)
-    # If the student has any flashcards to practice and has not practiced enough to get their points for today or they
-    # have intrinsic motivation to practice beyond what they are expected to do.
-    if (available_flashcards_num > 0 and 
-        len(questions) > 0 and
-        (practiced_today_count != questions_to_complete_day or
-            request.vars.willing_to_continue or
-            spacing == 0)):
         # Find index of the last question asked.
         question_names = [q.name for q in questions]
-
-        try:
-            qIndex = question_names.index(flashcard.question_name)
-        except:
-            qIndex = 0
-
+        qIndex = question_names.index(flashcard.question_name)
         # present the next one in the list after the last one that was asked
         question = questions[(qIndex + 1) % len(questions)]
 
@@ -925,15 +900,15 @@ def practice():
                 course_name=auth.user.course_name,
                 practice_completion_date=now_local.date()
             )
-            practice_completion_count = _get_practice_completion(auth.user.id,
-                                                                    auth.user.course_name,
-                                                                    spacing)
             if practice_graded == 1:
                 # send practice grade via lti, if setup for that
                 lti_record = _get_lti_record(session.oauth_consumer_key)
                 practice_grade = _get_student_practice_grade(auth.user.id, auth.user.course_name)
-                course_settings = _get_course_practice_record(auth.user.course_name)
+                course_settings = _get_course_practice_record(auth.user.course_name, auth.user.id)
 
+                practice_completion_count = _get_practice_completion(auth.user.id,
+                                                                     auth.user.course_name,
+                                                                     spacing)
                 if spacing == 1:
                     total_possible_points = day_points * max_days
                     points_received = day_points * practice_completion_count
@@ -941,11 +916,7 @@ def practice():
                     total_possible_points = question_points * max_questions
                     points_received = question_points * practice_completion_count
 
-                if lti_record and \
-                        practice_grade and \
-                        practice_grade.lis_outcome_url and \
-                        practice_grade.lis_result_sourcedid and \
-                        course_settings:
+                if lti_record and practice_grade and course_settings:
                     if spacing == 1:
                         send_lti_grade(assignment_points=max_days,
                                        score=practice_completion_count,
