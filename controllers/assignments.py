@@ -347,7 +347,7 @@ def download_time_spent():
     response.view='generic.csv'
     return dict(filename='grades_download.csv', csvdata=rows, field_names=field_names+type_names+assignment_names)
 
-def _calculate_totals(sid, assignment_name = None, assignment_id = None):
+def _calculate_totals(sid=None, student_rownum=None, assignment_name = None, assignment_id = None):
     if assignment_id:
         assignment = db(
             (db.assignments.id == assignment_id) & (db.assignments.course == auth.user.course_id)).select().first()
@@ -355,27 +355,27 @@ def _calculate_totals(sid, assignment_name = None, assignment_id = None):
         assignment = db(
             (db.assignments.name == assignment_name) & (db.assignments.course == auth.user.course_id)).select().first()
     if assignment:
-        return do_calculate_totals(assignment, auth.user.course_id, auth.user.course_name, sid, db, settings)
+        return do_calculate_totals(assignment, auth.user.course_id, auth.user.course_name, sid, student_rownum, db, settings)
     else:
         return {'success': False, 'message': "Select an assignment before trying to calculate totals."}
+
 
 @auth.requires(lambda: verifyInstructorStatus(auth.user.course_name, auth.user), requires_login=True)
 def calculate_totals():
     assignment_name = request.vars.assignment
     sid = request.vars.get('sid', None)
-    return json.dumps(_calculate_totals(sid, assignment_name=assignment_name))
+    return json.dumps(_calculate_totals(sid=sid, assignment_name=assignment_name))
 
 
-def _autograde(sid, question_name=None, enforce_deadline=False, assignment_name=None, assignment_id=None, timezoneoffset=None):
+def _autograde(sid=None, student_rownum=None, question_name=None, enforce_deadline=False, assignment_name=None, assignment_id=None, timezoneoffset=None):
     if assignment_id:
         assignment = db(
             (db.assignments.id == assignment_id) & (db.assignments.course == auth.user.course_id)).select().first()
     else:
         assignment = db(
             (db.assignments.name == assignment_name) & (db.assignments.course == auth.user.course_id)).select().first()
-
     if assignment:
-        count = do_autograde(assignment, auth.user.course_id, auth.user.course_name, sid, question_name,
+        count = do_autograde(assignment, auth.user.course_id, auth.user.course_name, sid, student_rownum, question_name,
                              enforce_deadline, timezoneoffset, db, settings)
         return {'success': True, 'message': "autograded {} items".format(count)}
     else:
@@ -391,13 +391,13 @@ def self_autograde():
     assignment_id = request.vars.assignment_id
     timezoneoffset = session.timezoneoffset if 'timezoneoffset' in session else None
 
-    res = _autograde(auth.user.id,
+    res = _autograde(student_rownum=auth.user.id,
                      assignment_id=assignment_id,
                      timezoneoffset=timezoneoffset)
     if not res['success']:
         session.flash = "Failed to autograde individual questions for user id {} for assignment {}".format(auth.user.id, assignment_id)
     else:
-        res2 = _calculate_totals(auth.user.id, assignment_id=assignment_id)
+        res2 = _calculate_totals(student_rownum=auth.user.id, assignment_id=assignment_id)
         if not res2['success']:
             session.flash = "Failed to compute totals for user id {} for assignment {}".format(auth.user.id, assignment_id)
         else:
@@ -434,8 +434,8 @@ def autograde():
     assignment_name = request.vars.assignment
     timezoneoffset = session.timezoneoffset if 'timezoneoffset' in session else None
 
-    return json.dumps(_autograde(sid,
-                                 question_name,
+    return json.dumps(_autograde(sid=sid,
+                                 question_name=question_name,
                                  enforce_deadline=enforce_deadline,
                                  assignment_name=assignment_name,
                                  timezoneoffset=timezoneoffset))

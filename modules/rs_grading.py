@@ -413,19 +413,25 @@ def _compute_assignment_total(student, assignment, course_name, db=None):
                          .format(student.id, assignment.id, score))
         return score, None
 
-def _get_students(course_id, sid = None, db=None):
-    if sid:
-        # sid which is passed in is a row id, not a username; get the username
-        student_rows = db((db.user_courses.course_id == course_id) &
-                          (db.user_courses.user_id == db.auth_user.id) &
-                          (db.auth_user.id == sid)
+def _get_students(course_id=None, sid = None, student_rownum=None, db=None):
+    print("_get_students", course_id, sid, student_rownum)
+    if student_rownum:
+        # get the student id as well as username
+        student_rows = db((db.auth_user.id == student_rownum)
                           ).select(db.auth_user.username, db.auth_user.id)
-    else:
+    elif sid:
+        # sid is a username; get the matching rownum as well
+        student_rows = db((db.auth_user.username == sid)
+                          ).select(db.auth_user.username, db.auth_user.id)
+    elif course_id:
         # get all student usernames for this course
         student_rows = db((db.user_courses.course_id == course_id) &
                           (db.user_courses.user_id == db.auth_user.id)
                           ).select(db.auth_user.username, db.auth_user.id)
+    else:
+        student_rows = []
 
+    print student_rows
     return student_rows
 
 def send_lti_grade(assignment_points, score, consumer, secret, outcome_url, result_sourcedid):
@@ -448,7 +454,7 @@ def send_lti_grade(assignment_points, score, consumer, secret, outcome_url, resu
 
 def send_lti_grades(assignment_id, assignment_points, course_id, lti_record, db):
     #print("sending lti grades")
-    student_rows = _get_students(course_id, db=db)
+    student_rows = _get_students(course_id=course_id, db=db)
     for student in student_rows:
         grade = db(
             (db.grades.auth_user == student.id) &
@@ -463,8 +469,8 @@ def send_lti_grades(assignment_id, assignment_points, course_id, lti_record, db)
                            result_sourcedid= grade.lis_result_sourcedid)
     #print("done sending lti grades")
 
-def do_calculate_totals(assignment, course_id, course_name, sid, db, settings):
-    student_rows = _get_students(course_id, sid, db)
+def do_calculate_totals(assignment, course_id, course_name, sid, student_rownum, db, settings):
+    student_rows = _get_students(course_id=course_id, sid=sid, student_rownum=student_rownum, db=db)
 
     results = {'success':True}
     if sid:
@@ -485,7 +491,7 @@ def do_calculate_totals(assignment, course_id, course_name, sid, db, settings):
     return results
 
 
-def do_autograde(assignment, course_id, course_name, sid, question_name, enforce_deadline, timezoneoffset,
+def do_autograde(assignment, course_id, course_name, sid, student_rownum, question_name, enforce_deadline, timezoneoffset,
                  db, settings):
     start = datetime.datetime.now()
     if enforce_deadline == 'true':
@@ -498,7 +504,7 @@ def do_autograde(assignment, course_id, course_name, sid, question_name, enforce
         deadline = deadline + datetime.timedelta(hours=float(timezoneoffset))
         logger.debug("ASSIGNMENT DEADLINE OFFSET %s",deadline)
 
-    student_rows = _get_students(course_id, sid, db)
+    student_rows = _get_students(course_id=course_id, sid=sid, student_rownum=student_rownum, db=db)
     sids = [row.username for row in student_rows]
 
     if question_name:
@@ -530,10 +536,10 @@ def do_autograde(assignment, course_id, course_name, sid, question_name, enforce
     count = 0
     # _profile(start, "after readings fetched")
     for (name, chapter, subchapter, points, ar, ag, wtg) in readings:
-        print("\nGrading all students for {}/{}".format(chapter, subchapter))
+        # print("\nGrading all students for {}/{}".format(chapter, subchapter))
         count += 1
         for s in sids:
-            print("."),
+            # print("."),
             score = 0
             rows = db((db.questions.chapter == chapter) &
                       (db.questions.subchapter == subchapter) &
