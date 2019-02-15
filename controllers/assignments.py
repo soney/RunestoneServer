@@ -384,6 +384,33 @@ def _autograde(sid=None, student_rownum=None, question_name=None, enforce_deadli
 def _get_assignment(assignment_id):
     return db(db.assignments.id == assignment_id).select().first()
 
+def _try_to_send_lti_grade(student_row_num, assignment_id):
+    # try to send lti grades
+    assignment = _get_assignment(assignment_id)
+    if not assignment:
+        session.flash = "Failed to find assignment object for assignment {}".format(assignment_id)
+    else:
+        grade = db(
+            (db.grades.auth_user == student_row_num) &
+            (db.grades.assignment == assignment_id)).select().first()
+        if not grade:
+            session.flash = "Failed to find grade object for user {} and assignment {}".format(auth.user.id,
+                                                                                               assignment_id)
+        else:
+            lti_record = _get_lti_record(session.oauth_consumer_key)
+            if (not lti_record) or (not grade.lis_result_sourcedid) or (not grade.lis_outcome_url):
+                session.flash = "Failed to send grade back to LMS (Coursera, Canvas, Blackboard...), probably because the student accessed this assignment directly rather than using a link from the LMS, or because there is an error in the assignment link in the LMS. Please report this error."
+            else:
+                # really sending
+                # print("send_lti_grade({}, {}, {}, {}, {}, {}".format(assignment.points, grade.score, lti_record.consumer, lti_record.secret, grade.lis_outcome_url, grade.lis_result_sourcedid))
+                send_lti_grade(assignment.points,
+                               score=grade.score,
+                               consumer=lti_record.consumer,
+                               secret=lti_record.secret,
+                               outcome_url=grade.lis_outcome_url,
+                               result_sourcedid=grade.lis_result_sourcedid)
+
+
 @auth.requires_login()
 def self_autograde():
     if not settings.coursera_mode:
@@ -440,6 +467,16 @@ def autograde():
                                  assignment_name=assignment_name,
                                  timezoneoffset=timezoneoffset))
 
+@auth.requires(lambda: verifyInstructorStatus(auth.user.course_name, auth.user), requires_login=True)
+def send_assignment_score_via_LTI():
+
+    assignment_name = request.vars.assignment
+    sid = request.vars.get('sid', None)
+    assignment = db(
+        (db.assignments.name == assignment_name) & (db.assignments.course == auth.user.course_id)).select().first()
+    student_row = db((db.auth_user.username == sid)).select(db.auth_user.id).first()
+    _try_to_send_lti_grade(student_row.id, assignment.id)
+    return json.dumps({'success': True })
 
 
 
@@ -573,6 +610,30 @@ def doAssignment():
             session.flash = "That assignment is no longer available"
             return redirect(URL('assignments', 'chooseAssignment'))
 
+
+
+
+    # alternative version using joins
+    # questions = db((db.chapters.course_id == course.course_name) & \
+    #                (db.sub_chapters.chapter_id == db.chapters.id) & \
+    #                (db.assignment_questions.assignment_id == assignment.id)) \
+    #     .select(db.questions.name,
+    #             db.questions.htmlsrc,
+    #             db.questions.id,
+    #             db.questions.chapter,
+    #             db.questions.subchapter,
+    #             db.assignment_questions.points,
+    #             db.assignment_questions.activities_required,
+    #             db.assignment_questions.reading_assignment,
+    #             db.chapters.chapter_name,
+    #             db.sub_chapters.sub_chapter_name,
+    #             orderby=db.assignment_questions.sorting_priority,
+    #             join=db.assignment_questions.on(db.questions.id == db.assignment_questions.question_id),
+    #             left=[db.chapters.on(db.questions.chapter == db.chapters.chapter_label),
+    #                   db.sub_chapters.on(db.questions.subchapter == db.sub_chapters.sub_chapter_label)]
+    #             )
+
+
     questions = db((db.assignment_questions.assignment_id == assignment.id) & \
                    (db.assignment_questions.question_id == db.questions.id) & \
                    (db.chapters.chapter_label == db.questions.chapter) & \
@@ -590,7 +651,6 @@ def doAssignment():
                 db.chapters.chapter_name,
                 db.sub_chapters.sub_chapter_name,
                 orderby=db.assignment_questions.sorting_priority)
-
     try:
         db.useinfo.insert(sid=auth.user.username,act='viewassignment',div_id=assignment.name,
                           event='page',
