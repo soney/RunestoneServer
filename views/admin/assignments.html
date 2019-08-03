@@ -2,7 +2,7 @@
 {{ block tabcontent }}
 
 <script type="text/javascript">
-  <!-- Avoid problems with quoting single quotes via `XML <http://web2py.com/books/default/chapter/29/05/the-views#XML>`_. -->
+  // Avoid problems with quoting single quotes via `XML <http://web2py.com/books/default/chapter/29/05/the-views#XML>`_.
   eBookConfig.toc = {{=XML(toc)}};
 </script>
 <link href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.3/css/select2.min.css" rel="stylesheet">
@@ -32,7 +32,6 @@
 </script>
 <script src="{{=URL('static', 'js/bootstrap-table/bootstrap-table-reorder-rows.js')}}">
 </script>
-
 <div class="row">
   <div class="col-md-2"></div>
   <div class="col-md-8">
@@ -42,36 +41,38 @@
       <option value="{{=assignmentid}}">{{=assignments[assignmentid]}}</option>
       {{ pass }}
     </select>
-    <button class="btn" data-target="#addAssignment" data-toggle="modal" style="margin-top: 12px;">+</button>
-    <button class="btn" onclick="remove_assignment();" style="margin-top: 12px;">-</button>
+    <button class="btn" data-target="#addAssignment" data-toggle="modal" style="margin-top: 12px;">Add</button>
+    <button class="btn" onclick="remove_assignment();" style="margin-top: 12px;">Delete</button>
+    <button class="btn" data-target="#renameAssignment" data-toggle="modal" onclick="fillinAssignmentName('renameName');" style="margin-top: 12px;">Rename</button>
     <fieldset>
       <legend>Assignment properties</legend>
       <span id="totalPoints"></span><br>
-      <form action="" id="assignment-form">
+      <form id="assignment-form">
         <label for="datetimepicker">Due Date: </label>
         <input id="datetimepicker" name="due" type="text"><br>
-
+        <label for="assign_visible">Visible to Students</label>
+        <input id="assign_visible" type="checkbox" name="visible" value="T"><br>
         <label for="assignment_description">Description: </label>
         <input class="form-control" id="assignment_description" name="description" type="text"><br>
 
         <input class="btn btn-default" onclick="update_assignment(this.form)" type="button" value="Save">
       </form>
-    <fieldset>
+    </fieldset>
   </div>
   <div class="col-md-2"></div>
 </div>
 
-<!-- Modal -->
-<div aria-hidden="true" aria-labelledby="myModalLabel" class="modal fade" id="addAssignment" role="dialog" tabindex="-1">
+<!-- Modal: Add -->
+<div aria-hidden="true" aria-labelledby="myAddModalLabel" class="modal fade" id="addAssignment" role="dialog" tabindex="-1">
   <div class="modal-dialog">
     <div class="modal-content">
       <!-- Modal Header -->
       <div class="modal-header">
         <button class="close" data-dismiss="modal" type="button"><span aria-hidden="true">&times;</span> <span class="sr-only">Close</span></button>
-        <h4 class="modal-title" id="myModalLabel">Create Assignment</h4>
+        <h4 class="modal-title" id="myAddModalLabel">Create Assignment</h4>
       </div><!-- Modal Body -->
       <div class="modal-body">
-        <form action="" role="form">
+        <form role="form">
           <div class="form-group">
             <label for="name">Assignment Name</label> <input class="form-control" id="name" placeholder="Enter assignment name" type="text">
           </div>
@@ -79,11 +80,37 @@
         </form>
       </div><!-- Modal Footer -->
       <div class="modal-footer">
-        <button class="btn btn-default" data-dismiss="modal" type="button">Close</button>
+        <button class="btn btn-default" data-dismiss="modal" type="button">Cancel</button>
       </div>
     </div>
   </div>
 </div>
+
+<!-- Modal: Rename -->
+<div aria-hidden="true" aria-labelledby="myRenameModalLabel" class="modal fade" id="renameAssignment" role="dialog" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <!-- Modal Header -->
+      <div class="modal-header">
+        <button class="close" data-dismiss="modal" type="button"><span aria-hidden="true">&times;</span> <span class="sr-only">Close</span></button>
+        <h4 class="modal-title" id="myRenameModalLabel">Rename Assignment</h4>
+      </div><!-- Modal Body -->
+      <div class="modal-body">
+        <form role="form">
+          <div class="form-group">
+            <label for="rename-name">Enter the new name for assignment "<span id="renameName"></span>"</label> <input class="form-control" id="rename-name" placeholder="Enter assignment name" type="text">
+          </div>
+          <input class="btn btn-default" data-dismiss="modal" onclick="renameAssignment(this.form)" type="button" value="Rename">
+        </form>
+      </div><!-- Modal Footer -->
+      <div class="modal-footer">
+        <button class="btn btn-default" data-dismiss="modal" type="button">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
 
 <div class="row">
   <div class="col-md-12" id="leftpanel2" style="visibility: hidden">
@@ -133,14 +160,14 @@
                 <!-- Search tab -->
                 <div class="form-group tab-pane fade" id="qbank" style="margin-bottom: 30px">
                   <h5 style="text-align: center">Search Question Bank</h5>
-                  <form action="" id="qbankform" name="qbankform" role="form">
+                  <form id="qbankform" name="qbankform" role="form">
                     <div class="form-group">
                       <label for="term">Term</label> <input class="form-control" id="term" placeholder="Term" type="text">
                     </div>
                     <div class="form-group">
                       <label for="chapter">Chapter</label>
                       <select class="form-control" id="chapter">
-                        <option selected="selected" value=""></option>
+                        <option selected="selected" label="select chapter" value=""></option>
                         {{ for chapter in chapters: }}
                         <option value="{{=chapter}}">{{=chapter}}</option>
                         {{ pass }}
@@ -208,8 +235,8 @@
                         <option value="dragndrop">
                           drag and drop
                         </option>
-                        <option value="parsons">
-                          pasons
+                        <option value="parsonsprob">
+                          parsons
                         </option>
                         <option value="fillintheblank">
                           fill in the blank
@@ -253,7 +280,7 @@
                         <label for="isprivate">Private</label><input id="isprivate" type="checkbox">
                       </div>
                       <div class="col-md-12">
-                        <label for="createpoints">Points</label> <input id="createpoints" name="points" type="number"> <label for="createtimed">Timed</label> <input id="createtimed" name="timed" type="checkbox" value="true">
+                        <label for="createpoints">Points</label> <input id="createpoints" name="points" type="number" value="1"> <label for="createtimed">Timed</label> <input id="createtimed" name="timed" type="checkbox" value="true">
                       </div>
                         <input type="hidden" id="qrawhtml" name="qrawhtml" value="">
                       <div class="col-md-12">
@@ -268,7 +295,8 @@
               <div id="component-preview" class="col-md-6">
               </div>
               <!-- General purpose dialog for editing a question -->
-              <div aria-hidden="true" aria-labelledby="EditQuestion" class="modal fade" id="editModal" role="dialog" tabindex="-1">
+              <!-- aria-labelledby="EditQuestion" -->
+              <div aria-hidden="true"  class="modal fade" id="editModal" role="dialog" tabindex="-1">
                           <div class="modal-dialog">
                             <div class="modal-content">
                               <!-- Modal Header -->
@@ -278,9 +306,9 @@
                               </div><!-- Modal Body -->
                               <div class="modal-body">
                                 <p>If you are not the original author of this question you must change the id on the first line of the directive.</p>
-                                <form action="" id="editForm" name="editForm">
+                                <form id="editForm" name="editForm">
                                   <div class="form-group">
-                                    <label for="difficultyselector">Change Difficulty</label>
+                                    <label for="change_difficulty">Change Difficulty</label>
                                     <div id="change_difficulty">
                                       <input id="r1" name="rating" type="radio" value="1"><label for="r1">1</label> <input id="r2" name="rating" type="radio" value="2"><label for="r2">2</label> <input id="r3" name="rating" type="radio" value="3"><label for="r3">3</label> <input id="r4" name="rating" type="radio" value="4"><label for="r4">4</label> <input id="r5" name="rating" type="radio" value="5"><label for="r5">5</label>
                                     </div>
@@ -310,7 +338,7 @@
                         </div>
                         <script type="text/javascript">
                           // clean out the preview when the modal is hidden
-                          $("#editModal").on("hidden.bs.modal", function() { 
+                          $("#editModal").on("hidden.bs.modal", function() {
                             $("#modal-preview").html("")
                           });
                         </script>
@@ -341,9 +369,17 @@ $(function () {
     configure_tree_picker(question_picker, eBookConfig.toc.question_picker, $('#search-tree-question-picker'), 3,
         // TODO: Remember last user selections for points, autograde, and which_to_grade, instead of hard-coding them here.
         // Called when a node is checked.
-        function (node) { updateAssignmentRaw(node.id, 1, 'pct_correct', 'best_answer'); },
+        function (node) {
+          let autograde = 'pct_correct';
+          let whichto = 'best_answer';
+          if (node.text.indexOf("✓") === -1) {
+            autograde = 'manual';
+            whichto = '';
+          }
+          updateAssignmentRaw(node.id, 1, autograde, whichto);
+        },
         // Called when a node is unchecked.
-        function (node) { remove_question(node.id); },
+        function (node) { remove_question(node.id); }
     );
     question_picker.on('ready.jstree', function(event, data) {
         // Display the first assignment and the browser after the tree is ready. If triggered before, the tree can't find nodes, check boxes, etc.
@@ -362,7 +398,7 @@ $(function () {
         // Called when a node is checked.
         function (node) { updateReading(node.id, -1, 1, 'interact', 'best_answer'); },
         // Called when a node is unchecked.
-        function (node) { remove_reading(node.id); },
+        function (node) { remove_reading(node.id); }
     );
 
 
