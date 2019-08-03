@@ -1,12 +1,13 @@
+dist: xenial
 language: python
 python:
-- '2.7'
+- '3.7'
 services:
 - postgresql
 addons:
   postgresql: '9.4'
 env:
-- WEB2PY_VERSION=2.17.2
+- WEB2PY_VERSION=2.18.4
 script:
 - pip install -U -r requirements-test.txt
 - mkdir runestone
@@ -23,14 +24,16 @@ script:
 - cd runestone
 - mkdir private
 - echo "sha512:16492eda-ba33-48d4-8748-98d9bbdf8d33" > private/auth.key
+- pip install -e rsmanage
 - cd books
 - git clone https://github.com/RunestoneInteractive/thinkcspy.git
 - cd ..
 - cd tests
-# Now actually run the tests.
+# Now actually run the tests
+- cp .coveragerc ../../../
 - python run_tests.py
-# Rebuild the grades just to make sure this works.
-- python run_tests.py --rebuildgrades
+- cd ../../..
+- coveralls
 notifications:
   slack:
     secure: OfeZ/+YHpSl7GNFkzEKu0uObuMdymKmDEeDyfB++RaglalcgkDQAqrCPx+YVw6brXOHGeC6BkGJe/Fs143Ai8/yf38nMmZg/dej5nLgZNST67jWaapIydx5QeuCrsRKvUP+z6yEYoBkYXTsYPyTiKGGsyzvX6dimZRT4nD8qrv0=

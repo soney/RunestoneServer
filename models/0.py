@@ -8,6 +8,7 @@
 from gluon.storage import Storage
 import logging
 from os import environ
+import sys
 
 settings = Storage()
 
@@ -60,4 +61,5 @@ settings.database_uri = settings.database_uri.replace('postgresql://', 'postgres
 
 settings.logger = "web2py.app.runestone"
 settings.sched_logger = settings.logger  # works for production where sending log to syslog but not for dev.
-settings.log_level = logging.WARNING
+settings.log_level = logging.DEBUG
+settings.python_interpreter = sys.executable

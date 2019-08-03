@@ -1,14 +1,26 @@
-from os import path
-import os
-import shutil
-import sys
+# *********************************************
+# |docname| - Endpoints relating to assignments
+# *********************************************
+#
+# Imports
+# =======
+# These are listed in the order prescribed by `PEP 8
+# <http://www.python.org/dev/peps/pep-0008/#imports>`_.
+#
+# Standard library
+# ----------------
 import json
 import logging
 import datetime
 from random import shuffle
 from collections import OrderedDict
+
+# Third-party imports
+# -------------------
 from psycopg2 import IntegrityError
 from rs_grading import do_autograde, do_calculate_totals, do_check_answer, send_lti_grade
+from db_dashboard import DashboardDataAnalyzer
+import six
 import bleach
 
 logger = logging.getLogger(settings.logger)
@@ -43,7 +55,7 @@ def index():
     data_analyzer.load_assignment_metrics(request.vars.sid, studentView=True)
 
     chapters = []
-    for chapter_label, chapter in data_analyzer.chapter_progress.chapters.iteritems():
+    for chapter_label, chapter in six.iteritems(data_analyzer.chapter_progress.chapters):
         chapters.append({
             "label": chapter.chapter_label,
             "status": chapter.status_text(),
@@ -452,6 +464,23 @@ def self_autograde():
                                        result_sourcedid=grade.lis_result_sourcedid)
     return json.dumps({})
 
+@auth.requires_login()
+def student_autograde():
+    """
+    This is a safe endpoint that students can call from the assignment page
+    to get a preliminary grade on their assignment.
+    """
+    assignment_id = request.vars.assignment_id
+    timezoneoffset = session.timezoneoffset if 'timezoneoffset' in session else None
+    assignment = db(db.assignments.id == assignment_id).select().first()
+    if assignment:
+        count = do_autograde(assignment, auth.user.course_id, auth.user.course_name,
+            auth.user.username, None, 'false', timezoneoffset, db, settings)
+        return json.dumps({'message': "autograded {} items".format(count)})
+    else:
+        return json.dumps({'success': False, 'message': "Could not find this assignment -- This should not happen"})
+
+
 @auth.requires(lambda: verifyInstructorStatus(auth.user.course_name, auth.user), requires_login=True)
 def autograde():
     ### This endpoint is hit to autograde one or all students or questions for an assignment
@@ -482,6 +511,9 @@ def send_assignment_score_via_LTI():
 
 @auth.requires(lambda: verifyInstructorStatus(auth.user.course_name, auth.user), requires_login=True)
 def record_grade():
+    """
+    Called from the grading interface when the instructor manually records a grade.
+    """
     if 'acid' not in request.vars or 'sid' not in request.vars:
         return json.dumps({'success': False, 'message': "Need problem and user."})
 
@@ -516,6 +548,9 @@ def record_grade():
 
 @auth.requires(lambda: verifyInstructorStatus(auth.user.course_name, auth.user), requires_login=True)
 def get_problem():
+    """
+    Called from the instructors grading interface
+    """
     if 'acid' not in request.vars or 'sid' not in request.vars:
         return json.dumps({'success': False, 'message': "Need problem and user."})
 
@@ -637,7 +672,7 @@ def doAssignment():
     questions = db((db.assignment_questions.assignment_id == assignment.id) & \
                    (db.assignment_questions.question_id == db.questions.id) & \
                    (db.chapters.chapter_label == db.questions.chapter) & \
-                   (db.chapters.course_id == course.course_name) & \
+                   ((db.chapters.course_id == course.course_name) | (db.chapters.course_id == course.base_course)) & \
                    (db.sub_chapters.chapter_id == db.chapters.id) & \
                    (db.sub_chapters.sub_chapter_label == db.questions.subchapter)) \
         .select(db.questions.name,
@@ -669,21 +704,24 @@ def doAssignment():
     for q in questions:
         if q.questions.htmlsrc:
             # This replacement is to render images
-            htmlsrc = bytes(q.questions.htmlsrc).decode('utf8').replace('src="../_static/', 'src="../static/' + course[
-                'course_name'] + '/_static/')
-            htmlsrc = htmlsrc.replace("../_images",
-                                      "/{}/static/{}/_images".format(request.application, course.course_name))
+            if six.PY3:
+                bts = q.questions.htmlsrc
+            else:
+                bts = bytes(q.questions.htmlsrc).decode('utf8')
+
+            htmlsrc = bts.replace('src="../_static/',
+                                  'src="' + get_course_url('_static/'))
+            htmlsrc = htmlsrc.replace("../_images/",
+                                      get_course_url('_images/'))
         else:
             htmlsrc = None
-        if assignment['released']:
-            # get score and comment
-            grade = db((db.question_grades.sid == auth.user.username) &
-                       (db.question_grades.course_name == auth.user.course_name) &
-                       (db.question_grades.div_id == q.questions.name)).select().first()
-            if grade:
-                score, comment = grade.score, grade.comment
-            else:
-                score, comment = 0, 'ungraded'
+
+        # get score and comment
+        grade = db((db.question_grades.sid == auth.user.username) &
+                    (db.question_grades.course_name == auth.user.course_name) &
+                    (db.question_grades.div_id == q.questions.name)).select().first()
+        if grade:
+            score, comment = grade.score, grade.comment
         else:
             score, comment = 0, 'ungraded'
 
@@ -731,13 +769,16 @@ def doAssignment():
                 status = 'notstarted'
             info['status'] = status
 
-            readings[ch_name]['subchapters'].append(info)
-            readings_score += info['score']
+            # Make sure we don't create duplicate entries for older courses. New style
+            # courses only have the base course in the database, but old will have both
+            if info not in readings[ch_name]['subchapters']:
+                readings[ch_name]['subchapters'].append(info)
+                readings_score += info['score']
 
         else:
-            # add to questions
-            questionslist.append(info)
-            questions_score += info['score']
+            if info not in questionslist:# add to questions
+                questionslist.append(info)
+                questions_score += info['score']
 
     # put readings into a session variable, to enable next/prev button
     readings_names = []
@@ -753,12 +794,14 @@ def doAssignment():
                 readings=readings,
                 questions_score=questions_score,
                 readings_score=readings_score,
+                # These are from coursera version of student-initiated grading
                 autogradingUrl=URL('assignments', 'self_autograde'),
                 gradeRecordingUrl=URL('assignments', 'record_grade'),
                 calcTotalsURL=URL('assignments', 'calculate_totals'),
                 student_id=auth.user.id,
-                )
-
+                # these are from upstream version
+                student_id = auth.user.username,
+                released = assignment['released'])
 
 def chooseAssignment():
     if not auth.user:
@@ -839,12 +882,13 @@ def _get_qualified_questions(base_course, chapter_label, sub_chapter_label):
 
 # Gets invoked from lti to set timezone and then redirect to practice()
 def settz_then_practice():
-    return dict(course_name=request.vars.get('course_name', settings.default_course))
+    return dict(course=get_course_row(), course_name=request.vars.get('course_name', settings.default_course))
 
 
 # Gets invoked from practice if there is no record in course_practice for this course or the practice is not started.
 def practiceNotStartedYet():
-    return dict(message1=bleach.clean(request.vars.message1 or ""), message2=bleach.clean(request.vars.message2 or ""))
+    return dict(course=get_course_row(db.courses.ALL), course_id=auth.user.course_name,
+                message1=bleach.clean(request.vars.message1 or ''), message2=bleach.clean(request.vars.message2 or ''))
 
 
 # Gets invoked when the student requests practicing topics.
@@ -958,9 +1002,9 @@ def practice():
         question = questions[(qIndex + 1) % len(questions)]
 
         # This replacement is to render images
-        question.htmlsrc = bytes(question.htmlsrc).decode('utf8').replace('src="../_static/',
-                                                                          'src="../static/' + course[
-                                                                              'course_name'] + '/_static/')
+        question.htmlsrc = question.htmlsrc.replace('src="../_static/',
+                                                    'src="../static/' + course[
+                                                    'course_name'] + '/_static/')
         question.htmlsrc = question.htmlsrc.replace("../_images",
                                                     "/{}/static/{}/_images".format(request.application,
                                                                                    course.course_name))
@@ -1030,8 +1074,7 @@ def practice():
                                        outcome_url=practice_grade.lis_outcome_url,
                                        result_sourcedid=practice_grade.lis_result_sourcedid)
 
-    return dict(course=course, course_name=auth.user.course_name,
-                course_id=auth.user.course_name,
+    return dict(course=course,
                 q=questioninfo, all_flashcards=all_flashcards,
                 flashcard_count=available_flashcards_num,
                 # The number of days the student has completed their practice.

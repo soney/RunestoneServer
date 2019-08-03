@@ -1,18 +1,11 @@
 Runestone Interactive Server and API
 ====================================
 
-.. image:: https://badge.waffle.io/RunestoneInteractive/RunestoneServer.png?label=ready&title=Ready
-   :target: https://waffle.io/RunestoneInteractive/RunestoneServer
-   :alt: 'Stories in Ready'
+.. image:: https://travis-ci.org/RunestoneInteractive/RunestoneServer.svg?branch=master
+    :target: https://travis-ci.org/RunestoneInteractive/RunestoneServer
 
-.. image:: https://badges.gitter.im/Join%20Chat.svg
-   :alt: Join the chat at https://gitter.im/bnmnetp/runestone
-   :target: https://gitter.im/bnmnetp/runestone?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge
-
-
-.. image:: http://bnmnetp.me:8088/buildStatus/icon?job=RunestoneServer
-   :alt: Build Status
-
+.. image:: https://coveralls.io/repos/github/RunestoneInteractive/RunestoneServer/badge.png?branch=master
+   :target: https://coveralls.io/github/RunestoneInteractive/RunestoneServer?branch=master
 
 Relationship to other Runestone components
 ------------------------------------------
@@ -22,12 +15,20 @@ If you just want to use Runestone's capabilities to build pre-existing books or 
 This repository has the extra materials needed for running a web2py server with extra features for running courses using Runestone books and tools.
 
 
+Docker Installation
+-------------------
+
+The easiest way to deploy or develop Runestone Server is to use Docker, and a `Dockerfile <Dockerfile>`_ is provided for that.
+You can simply build the container, and run it, providing the database password sourced from an environment variable (or similar).
+Please see complete instructions in the `docker <docker>`_ folder included here.
+
+
 Installation
 ------------
 
 #. Install python.
 
-   First, make sure you have Python 2.7 installed.  Web2py has not yet been ported to Python3.  Even if you don't care about the web2py part of the install, the version of paverutils on pypi is still a Python 2.x package, although the development version is now at 3.x.
+   First, make sure you have Python installed.  Web2py has  been ported to Python3, but we have not finished all of our Python 3 testing yet. If you are a developer feel free to jump in with Python 3.
 
 #. Install and make a Python virtualenv
 
@@ -155,7 +156,7 @@ Installation
 
    ::
 
-       export WEB2PY_CONFIG=production
+       export WEB2PY_CONFIG=production # or development or test
        export WEB2PY_MIGRATE=Yes
        export DBURL=postgresql://username:pw@host/database
        export TEST_DBURL=postgresql://username:pw@host/database
@@ -238,7 +239,6 @@ The Harder Way
 * create an account for yourself
 
   * insert new auth_user
-  * cohort id should be "id"
   * Course name should be the course name from above (not a number)
   * Do *not* make up a registration key or a reset password key; leave them blank
 
@@ -252,7 +252,7 @@ The Harder Way
 Documentation
 -------------
 
-Documentation for the project is on our official `documentation site <http://runestoneinteractive.org/build/html/index.html>`_  This includes
+Links to documentation for the project are on our official `home page <http://runestoneinteractive.org/index.html>`_  This includes
 the list of dependencies you need to install in order to build the books included in the repository, or to set up
 a complete server environment.
 
@@ -297,7 +297,7 @@ donation using `gittip <https://www.gittip.com/bnmnetp/>`_
 More Documentation
 ------------------
 
-I have begun a project to document the `Runestone Interactive <http://docs.runestoneinteractive.org/build/html/index.html>`_ tools
+I have begun a project to document the `Runestone Interactive <https://runestone.academy/runestone/static/authorguide/index.html>`_ tools
 
 * All of the Runestone Interactive extensions to sphinx:
 
@@ -326,6 +326,35 @@ Browser Notes
 -------------
 
 Note, because this interactive edition makes use of lots of HTML 5 and Javascript
-I highly recommend either Chrome, or Safari.  Firefox 6+ works too, but has
-proven to be less reliable than the first two.  I have no idea whether this works
-at all under later versions of Internet Explorer.
+I highly recommend either Chrome, or Safari.  Firefox 67+ works too.  Reportedly Edge works fine as well.
+
+Python Notes
+------------
+
+Python 2.7 will reach the end of its life on January 1st, 2020. All of our development is now on Python 3.7.  With the release of docutils 0.15 sphinx no longer runs on 2.7 unless you install docutils 0.14. Sphinx 2.x only supports Python 3.x.  In July 2019 I removed testing for Python 2.7 as it is too much work to try to keep track of dependencies for 2.x and 3.x.  Please upgrade to Python 3.
+
+Researchers
+-----------
+
+If you use Runestone in your Research or write about it, please reference ``https://runestone.academy`` and cite this paper:
+
+::
+
+   @inproceedings{Miller:2012:BPE:2325296.2325335,
+    author = {Miller, Bradley N. and Ranum, David L.},
+    title = {Beyond PDF and ePub: Toward an Interactive Textbook},
+    booktitle = {Proceedings of the 17th ACM Annual Conference on Innovation and Technology in Computer Science Education},
+    series = {ITiCSE '12},
+    year = {2012},
+    isbn = {978-1-4503-1246-2},
+    location = {Haifa, Israel},
+    pages = {150--155},
+    numpages = {6},
+    url = {http://doi.acm.org/10.1145/2325296.2325335},
+    doi = {10.1145/2325296.2325335},
+    acmid = {2325335},
+    publisher = {ACM},
+    address = {New York, NY, USA},
+    keywords = {cs1, ebook, sphinx},
+   }
+

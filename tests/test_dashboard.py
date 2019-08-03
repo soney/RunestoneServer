@@ -1,56 +1,70 @@
 #
-# Unit Tests for AJAX API endpoints
+# Unit Tests for DASHBOARD API endpoints
 # Set up the environment variables
 # WEB2PY_CONFIG=test
 # TEST_DBURL=postgres://user:pw@host:port/dbname
 #
 #
 # Run these from the main web2py directory with the command:
-# python web2py.py -S runestone -M -R applications/runestone/tests/test_dashboard.py
 #
+#
+def test_student_report(test_client, runestone_db_tools, test_user, test_user_1):
+    course_3 = runestone_db_tools.create_course('test_course_3')
+    test_instructor_1 = test_user('test_instructor_1', 'password_1', course_3)
+    test_instructor_1.make_instructor()
 
-import unittest
-import sys
+    test_instructor_1.login()
+    db = runestone_db_tools.db
 
-from gluon.globals import Request, Session
-from gluon.tools import Auth
+    # Create an assignment -- using createAssignment
+    #test_client.post('dashboard/studentreport',
+    #     data=dict(id='test_user_1'))
 
-# bring in the ajax controllers
+    test_client.validate('dashboard/studentreport','Recent Activity', data=dict(id='test_instructor_1'))
 
+    test_instructor_1.hsblog(event="mChoice",
+            act="answer:1:correct",answer="1",correct="T",div_id="subc_b_1",
+            course="test_course_3")
 
-# clean up the database
-db(db.useinfo.div_id == 'unit_test_1').delete()
-db.commit()
-
-class TestDashboardEndpoints(unittest.TestCase):
-    def setUp(self):
-        global request, session, auth
-        request = Request(globals()) # Use a clean Request object
-        session = Session()
-        auth = Auth(db, hmac_key=Auth.get_or_create_key())
-        execfile("applications/runestone/controllers/dashboard.py", globals())
-
-
-    def testStudentReport(self):
-        auth.login_user(db.auth_user(1674))
-        session.auth = auth
-        request.vars.id=auth.user.username
-
-        res = studentreport()   #todo: if this is an endoint why does it not return json?
-
-        #course_id=auth.user.course_name,  user=data_analyzer.user, chapters=chapters, activity=activity, assignments=data_analyzer.grades
-        self.assertEqual(res['course_id'], 'testcourse')
-        self.assertEqual(res['user'].username, 'user_1674')
-        self.assertEqual(res['assignments']['List Practice']['score'], 13.0)
-        self.assertEqual(res['assignments']['List Practice']['class_average'], '7.82') #todo: why a string?
+    test_client.validate('dashboard/studentreport','subc_b_1', data=dict(id='test_instructor_1'))
 
 
+def test_subchapteroverview(test_client, runestone_db_tools, test_user, test_user_1):
+    course_3 = runestone_db_tools.create_course('test_course_3', base_course='test_course_1')
+    test_instructor_1 = test_user('test_instructor_1', 'password_1', course_3)
+    test_instructor_1.make_instructor()
 
-suite = unittest.TestSuite()
-suite.addTest(unittest.makeSuite(TestDashboardEndpoints))
-res = unittest.TextTestRunner(verbosity=2).run(suite)
-if len(res.errors) == 0 and len(res.failures) == 0:
-    sys.exit(0)
-else:
-    print("nonzero errors exiting with 1", res.errors, res.failures)
-    sys.exit(1)
+    test_instructor_1.login()
+    db = runestone_db_tools.db
+
+    test_client.validate('dashboard/subchapoverview','chapter_num')
+    test_client.validate('dashboard/subchapoverview','div_id', data=dict(tablekind='dividnum'))
+
+    test_instructor_1.hsblog(event="mChoice",
+            act="answer:1:correct",answer="1",correct="T",div_id="subc_b_1",
+            course="test_course_3")
+
+    test_client.validate('dashboard/subchapoverview','subc_b_1', data=dict(tablekind='dividnum'))
+    test_client.validate('dashboard/subchapoverview','div_id', data=dict(tablekind='dividmin'))
+    test_client.validate('dashboard/subchapoverview','div_id', data=dict(tablekind='dividmax'))
+
+def test_exercisemetrics(test_client, runestone_db_tools, test_user, test_user_1):
+    course_3 = runestone_db_tools.create_course('test_course_3', base_course='test_course_1')
+    test_instructor_1 = test_user('test_instructor_1', 'password_1', course_3)
+    test_instructor_1.make_instructor()
+
+    test_instructor_1.login()
+    test_instructor_1.hsblog(event='mChoice', act='answer:1:correct', correct='T',
+        answer='answer:1:correct',
+        div_id='subc_b_1',
+        course='test_course_3')
+
+    res = test_instructor_1.test_client.validate('dashboard/exercisemetrics', 'Responses by Student',
+            data=dict(chapter='test_chapter_1', id='subc_b_1'))
+
+
+
+# TODO:
+# grades
+# questiongrades
+# better testing of index conten

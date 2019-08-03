@@ -14,3 +14,7 @@ function selfGrade(assignment_id, student_id) {
         }
     });
 }
+
+
+//     jQuery.ajax({
+//        url: eBookConfig.app + '/assignments/student_autograde',

@@ -24,7 +24,11 @@
             <!-- Carousel
             ================================================== -->
             <link href="/{{=request.application}}/static/css/carousel.css" rel="stylesheet">
-            <div class="carousel slide col-md-8" data-ride="carousel" id="myCarousel">
+            {{ if (not auth.user): }}
+                <div class="carousel slide col-md-8" data-ride="carousel" id="myCarousel">
+            {{else: }}
+                <div class="carousel slide col-md-12" data-ride="carousel" id="myCarousel">
+            {{ pass }}
                 <!-- Indicators -->
                 <ol class="carousel-indicators">
                     <li data-target="#myCarousel" data-slide-to="0" class="active"></li>
@@ -40,7 +44,7 @@
                             <div class="carousel-caption">
                                 <h3>Welcome to Runestone Academy</h3>
                                 <p>We host a growing number of open source, interactive textbooks, written by award winning authors. Used by hundreds of schools</p>
-                                <p><a class="btn btn-lg btn-primary" href="http://runestoneinteractive.org/library.html" role="button">See the List</a> <a class="btn btn-lg btn-primary" href="https://runestone.academy/runestone/static/overview/overview.html" role="button">Take a Tour</a></p>
+                                <p><a class="btn btn-lg btn-primary" href="http://runestoneinteractive.org/pages/library.html" role="button">See the List</a> <a class="btn btn-lg btn-primary" href="https://runestone.academy/runestone/static/overview/overview.html" role="button">Take a Tour</a></p>
                             </div>
                         </div>
                     </div>
@@ -58,7 +62,7 @@
                             <div class="carousel-caption">
                                 <h2>New Instructors</h2>
                                 <p>Here is a Video that will help you get started. Or, take a tour of the unique interactive features of our books!</p>
-                                <p><a class="btn btn-lg btn-primary" href="https://youtu.be/IGg_SUWEnGU" role="button">Watch Video</a> <a class="btn btn-lg btn-primary" href="https://runestone.academy/runestone/static/overview/overview.html" role="button">Take Tour</a></p>
+                                <p><a class="btn btn-lg btn-primary" href="https://youtu.be/IGg_SUWEnGU" role="button">Watch Video</a> <a class="btn btn-lg btn-primary" href="https://runestone.academy/runestone/static/instructorguide/index.html" role="button">Instructors Guide</a></p>
                             </div>
                         </div>
                     </div>
@@ -91,14 +95,16 @@
                     </div>
                 </div><a class="left carousel-control" data-slide="prev" href="#myCarousel"><span class="glyphicon glyphicon-chevron-left"></span></a> <a class="right carousel-control" data-slide="next" href="#myCarousel"><span class="glyphicon glyphicon-chevron-right"></span></a>
             </div><!-- /.carousel -->
-            <h4 class="col-md-4">{{=T( request.args(0).replace('_',' ').capitalize() )}}</h4>
             {{ if 'static' in request.env.query_string:}}
                 <p>It appears you are trying to get to a class for which you must log in.  If you have already registered, please login below.  Otherwise you can <a href="{{=URL(f='user/register')}}">Register</a> here.</p>
             {{pass}}
           {{pass}}
             <!--  LOGIN -->
           {{if not settings.lti_only_mode:}}
-            {{ if (request.args(0) == 'login'): }}
+          {{ if not auth.user or request.args(0) == 'impersonate': }}
+              <h4 class="col-md-4">{{=T( request.args(0).replace('_',' ').capitalize() )}}</h4>
+          {{ pass }}
+          {{ if request.args(0) == 'login' and not auth.user: }}
                 <div id="web2py_user_form" class="col-md-4">
                     <form class="form-horizontal" method="post">
                         {{if not session.auth_two_factor_user:}}
@@ -148,12 +154,12 @@
                         {{pass}}
                     {{=form.custom.end}}
                     <!-- Must use this to get all the good defaults for the form -->
-                    <div id='auth-actions' class="col-md-4">
+                    <div id='auth-actions' style="margin-left: 20px;">
                         {{if not 'request_reset_password' in auth.settings.actions_disabled:}}
                             <a class="btn btn-sm btn-primary" href="{{=URL(args='request_reset_password')}}"
                                 role="button">{{=T('Lost Password')}}</a>
                             <a class="btn btn-sm btn-primary" href="{{=URL(args='retrieve_username')}}"
-                                role="button">{{=T('email my username')}}</a>
+                                role="button">{{=T('Forgot Username')}}</a>
                         {{pass}}
                     </div>
                 </div>
@@ -163,9 +169,44 @@
             {{if request.args(0) in ['retrieve_username', 'profile', 'request_reset_password', 'reset_password', 'change_password']: }}
                 <div id="web2py_user_form" class="col-md-4">
                     {{=form}}
+                    {{ if settings.academy_mode and request.args(0) == 'profile':}}
+                    <form action="{{=URL('default','delete')}}" onsubmit="return confirm('Are you sure?')">
+		                <div class="checkbox">
+                        <label>
+                          <input type=checkbox name="deleteaccount" id="delacct">
+			              <span>Delete my account and all data. Cannot be undone!</span>
+                        </label>
+                        </div>
+                        <input type="submit" value="Delete" class="btn btn-primary">
+                    </form>
+                    {{ pass }}
                     {{ if request.args(0) not in ['profile', 'reset_password', 'change_password']: }}
                         <p> You will receive an email from info@runestone.academy with your username.  If you don't see it right away check your spam folder.  You may want to add info@runestone.academy to your contacts to prevent it from going to spam in the future.</p>
                     {{pass}}
+                </div>
+                <div class="col-md-4">
+                    <h4>Course IDs for open courses</h4>
+                    <ul>
+                            <li>apcsareview</li>
+                            <li>authorguide</li>
+                            <li>cpp4python</li>
+                            <li>cppds</li>
+                            <li>csawesome</li>
+                            <li>fopp</li>
+                            <li>httlads</li>
+                            <li>instructorguide</li>
+                            <li>java4python</li>
+                            <li>JS4Python</li>
+                            <li>learnwebgl2</li>
+                            <li>overview</li>
+                            <li>pythonds</li>
+                            <li>pythoned</li>
+                            <li>StudentCSP</li>
+                            <li>TeacherCSP</li>
+                            <li>thinkcspy</li>
+                            <li>webfundamentals</li>
+                    </ul>
+
                 </div>
             {{pass}}
           {{else:}}
@@ -304,10 +345,16 @@
                 <p>Runestone uses usernames to keep track of you.  Please write it down somewhere if you're likely to forget it.  In the field for the coursename please use the name your instructor gave you are use one of the following for our open, public courses</p>
                 <ul>
                     <li><strong>thinkcspy</strong> for How to Think Like a Computer Scientist</li>
+                    <li><strong>fopp</strong> for Foundations of Python Programming</li>
                     <li><strong>pythonds</strong> for Problem Solving with Algorithms and data structures</li>
                     <li><strong>StudentCSP</strong> for the AP CS Principles</li>
-                    <li><strong>JavaReview</strong> for the AP Java Review</li>
-                    <li><strong>pip2</strong> for Programs, Information, People</li>
+                    <li><strong>csawesome</strong> AP CS A Java Course <strong>2019</strong></li>
+                    <li><strong>apcsareview</strong>Review for AP CS A Java Exam </li>
+                    <li><strong>httlads</strong> for How to Think like a Data Scientist</li>
+                    <li><strong>cppds</strong> for Problem Solving with Algorithms and Data Structures using C++</li>
+                    <li><strong>pythoned</strong>Spanish Language Edition of <strong>pythonds</strong></li>
+                    <li><strong>webfundamentals</strong>Fundamentals of Web Programming</li>
+                    <li><strong>learnwebgl2</strong>Learn Computer Graphics using WebGL</li>
                 </ul>
             </div>
           {{else:}} <!-- lti_only_mode -->
@@ -322,8 +369,8 @@
                     <p>The mission of Runestone Interactive is to democratize textbooks for the 21st century.  Textbook prices are too high, and paper textbooks are too old fashioned.  We are changing that.</p>
                     <ul>
                         <li>Freely available open source books</li>
-                        <li>Easy to use Authoring Tools to create Runestone books</li>
-                        <li>Hosting services for your course</li>
+                        <li>Easy to use authoring tools to create Runestone books</li>
+                        <li>Hosting services for your course - See our <a href="https://runestone.academy/runestone/static/instructorguide/index.html">Instructor Guide</a></li>
                     </ul>
                     <p>To learn more about this project, <a href="https://runestone.academy/runestone/static/overview/overview.html">see this overview</a>. For more information about the whole <b>Runestone Interactive</b> community and project, including how to contribute, please <a href="http://runestoneinteractive.org">click here</a>!</p>
                 </div>
@@ -337,7 +384,9 @@
                         working on this all the time.</p>
                     <p>If these books have helped you, if you liked them,
                         please consider making a small donation.</p>
-                    <a href="{{=URL("default","donate")}}"><img src="https://www.paypalobjects.com/en_US/i/btn/btn_donate_SM.gif" alt="PayPal - The safer, easier way to pay online!"></a>
+                        <a href="https://www.patreon.com/bePatron?u=19581921" data-patreon-widget-type="become-patron-button">Become a Patron!</a><script async src="https://c6.patreon.com/becomePatronButton.bundle.js"></script>
+                        <p style="margin-top: 15px;">Or...</p>
+                        Make a one-time donation <a href="{{=URL("default","donate")}}"><img src="https://www.paypalobjects.com/en_US/i/btn/btn_donate_SM.gif" alt="PayPal - The safer, easier way to pay online!"></a>
                 </div>
             </div>
         {{pass}}

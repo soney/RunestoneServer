@@ -10,7 +10,7 @@ import os
 import sys
 from io import open
 from lxml import html
-from feedback import is_server_feedback, fitb_feedback
+from feedback import is_server_feedback, fitb_feedback, lp_feedback
 
 logger = logging.getLogger(settings.logger)
 logger.setLevel(settings.log_level)
@@ -32,7 +32,7 @@ EVENT_TABLE = {'mChoice':'mchoice_answers',
 
 
 def compareAndUpdateCookieData(sid):
-    if request.cookies.has_key('ipuser') and request.cookies['ipuser'].value != sid:
+    if 'ipuser' in request.cookies and request.cookies['ipuser'].value != sid and request.cookies['ipuser'].value.endswith("@"+request.client):
         db.useinfo.update_or_insert(db.useinfo.sid == request.cookies['ipuser'].value, sid=sid)
 
 def hsblog():
@@ -44,13 +44,13 @@ def hsblog():
                             # log entries that come from auth timing out even but the user hasn't reloaded
                             # the page.
     else:
-        if request.cookies.has_key('ipuser'):
+        if 'ipuser' in request.cookies:
             sid = request.cookies['ipuser'].value
             setCookie = True
         else:
             sid = str(uuid.uuid1().int)+"@"+request.client
             setCookie = True
-    act = request.vars.act
+    act = request.vars.get('act', '')
     div_id = request.vars.div_id
     event = request.vars.event
     course = request.vars.course
@@ -151,6 +151,34 @@ def hsblog():
         db.shortanswer_answers.update_or_insert((db.shortanswer_answers.sid == sid) & (db.shortanswer_answers.div_id == div_id) & (db.shortanswer_answers.course_name == course),
             sid=sid, answer=act, div_id=div_id, timestamp=ts, course_name=course)
 
+    elif event == "lp_build" and auth.user:
+        ret, new_fields = db.lp_answers._validate_fields(dict(
+            sid=sid, timestamp=ts, div_id=div_id, course_name=course
+        ))
+        if not ret.errors:
+            do_server_feedback, feedback = is_server_feedback(div_id, course)
+            if do_server_feedback:
+                try:
+                    code_snippets = json.loads(request.vars.answer)['code_snippets']
+                except:
+                    code_snippets = []
+                result = lp_feedback(code_snippets, feedback)
+                # If an error occurred or we're not testing, pass the answer through.
+                res.update(result)
+
+                # Record the results in the database.
+                correct = result.get('correct')
+                answer = result.get('answer', {})
+                answer['code_snippets'] = code_snippets
+                ret = db.lp_answers.validate_and_insert(sid=sid, timestamp=ts, div_id=div_id,
+                    answer=json.dumps(answer), correct=correct, course_name=course)
+                if ret.errors:
+                    res.setdefault('errors', []).append(ret.errors.as_dict())
+            else:
+                res['errors'] = ['No feedback provided.']
+        else:
+            res.setdefault('errors', []).append(ret.errors.as_dict())
+
     response.headers['content-type'] = 'application/json'
     if setCookie:
         response.cookies['ipuser'] = sid
@@ -165,7 +193,7 @@ def runlog():    # Log errors and runs with code
         sid = auth.user.username
         setCookie = True
     else:
-        if request.cookies.has_key('ipuser'):
+        if 'ipuser' in request.cookies:
             sid = request.cookies['ipuser'].value
             setCookie = True
         else:
@@ -221,6 +249,7 @@ def runlog():    # Log errors and runs with code
         if 'to_save' in request.vars and (request.vars.to_save == "True" or request.vars.to_save == "true"):
             num_tries = 3
             done = False
+            dbcourse = db(db.courses.course_name == course).select().first()
             while num_tries > 0 and not done:
                 try:
                     db.code.insert(sid=sid,
@@ -228,7 +257,7 @@ def runlog():    # Log errors and runs with code
                         code=code,
                         emessage=error_info,
                         timestamp=ts,
-                        course_id=auth.user.course_id,
+                        course_id=dbcourse,
                         language=request.vars.lang)
                     if request.vars.partner:
                         if _same_class(sid, request.vars.partner):
@@ -238,7 +267,7 @@ def runlog():    # Log errors and runs with code
                                 code=newcode,
                                 emessage=error_info,
                                 timestamp=ts,
-                                course_id=auth.user.course_id,
+                                course_id=dbcourse,
                                 language=request.vars.lang)
                         else:
                             res = {'message': 'You must be enrolled in the same class as your partner'}
@@ -273,9 +302,13 @@ def gethist():
     codetbl = db.code
     acid = request.vars.acid
 
+    # if vars.sid then we know this is being called from the grading interface
     if request.vars.sid:
         sid = request.vars.sid
-        course_id = db(db.auth_user.username == sid).select(db.auth_user.course_id).first().course_id
+        if auth.user and verifyInstructorStatus(auth.user.course_name, auth.user.id):
+            course_id = auth.user.course_id
+        else:
+            course_id = None
     elif auth.user:
         sid = auth.user.username
         course_id = auth.user.course_id
@@ -334,24 +367,29 @@ def getprog():
     return json.dumps([res])
 
 
-@auth.requires_membership('instructor')
-def savegrade():
-    res = db(db.code.id == request.vars.id)
-    if request.vars.grade:
-        res.update(grade = float(request.vars.grade))
-    else:
-        res.update(comment = request.vars.comment)
-
 
 #@auth.requires_login()
+# This function is deprecated as of June 2019
+# We need to keep it in place as long as we continue to serve books
+# from runestone/static/  When that period is over we can eliminate
 def getuser():
     response.headers['content-type'] = 'application/json'
 
     if auth.user:
         try:
-            res = {'email': auth.user.email, 'nick': auth.user.username,
-                   'cohortId': auth.user.cohort_id, 'donated': auth.user.donated,
-                   'isInstructor': verifyInstructorStatus(auth.user.course_name, auth.user.id)}
+            # return the list of courses that auth.user is registered for to keep them from
+            # accidentally wandering into courses they are not registered for.
+            cres = db( (db.user_courses.user_id == auth.user.id) &
+                       (db.user_courses.course_id == db.courses.id)).select(db.courses.course_name)
+            clist = []
+            for row in cres:
+                clist.append(row.course_name)
+            res = {'email': auth.user.email,
+                   'nick': auth.user.username,
+                   'donated': auth.user.donated,
+                   'isInstructor': verifyInstructorStatus(auth.user.course_name, auth.user.id),
+                   'course_list': clist
+                   }
             session.timezoneoffset = request.vars.timezoneoffset
             logger.debug("setting timezone offset in session %s hours" % session.timezoneoffset)
         except:
@@ -465,7 +503,7 @@ def updatelastpage():
                                                  lastPageSubchapter)
             if len(questions) > 0:
                 now = datetime.datetime.utcnow()
-                now_local = now - datetime.timedelta(hours=float(session.timezoneoffset))
+                now_local = now - datetime.timedelta(hours=float(session.timezoneoffset) if 'timezoneoffset' in session else 0)
                 existing_flashcards = db((db.user_topic_practice.user_id == auth.user.id) &
                                          (db.user_topic_practice.course_name == auth.user.course_name) &
                                          (db.user_topic_practice.chapter_label == lastPageChapter) &
@@ -518,7 +556,7 @@ def getCompletionStatus():
             db.user_sub_chapter_progress.insert(user_id=auth.user.id,
                                                 chapter_id = lastPageChapter,
                                                 sub_chapter_id = lastPageSubchapter,
-                                                status = -1)
+                                                status = -1, start_date=datetime.datetime.utcnow())
             # the chapter might exist without the subchapter
             result = db((db.user_chapter_progress.user_id == auth.user.id) & (db.user_chapter_progress.chapter_id == lastPageChapter)).select()
             if not result:
@@ -581,18 +619,19 @@ def _getCorrectStats(miscdata,event):
     if auth.user:
         sid = auth.user.username
     else:
-        if request.cookies.has_key('ipuser'):
+        if 'ipuser' in request.cookies:
             sid = request.cookies['ipuser'].value
 
     if sid:
         course = db(db.courses.course_name == miscdata['course']).select().first()
         tbl = db[dbtable]
 
-        rows = db((tbl.sid == sid) & (tbl.timestamp > course.term_start_date)).select(tbl.correct, tbl.correct.count(),groupby=tbl.correct)
+        count_expr = tbl.correct.count()
+        rows = db((tbl.sid == sid) & (tbl.timestamp > course.term_start_date)).select(tbl.correct, count_expr, groupby=tbl.correct)
         total = 0
         correct = 0
         for row in rows:
-            count = row._extra.values()[0]
+            count = row[count_expr]
             total += count
             if row[dbtable].correct:
                 correct = count
@@ -626,7 +665,10 @@ def _getStudentResults(question):
         currentAnswers = []
 
         for row in res:
-            answer = clean(row.answer)
+            if row.answer:
+                answer = clean(row.answer)
+            else:
+                answer = None
 
             if row.sid == currentSid:
                 currentAnswers.append(answer)
@@ -763,11 +805,12 @@ def gettop10Answers():
 
     try:
         dbcourse = db(db.courses.course_name == course).select().first()
+        count_expr = db.fitb_answers.answer.count()
         rows = db((db.fitb_answers.div_id == question) &
                 (db.fitb_answers.course_name == course) &
-                (db.fitb_answers.timestamp > dbcourse.term_start_date)).select(db.fitb_answers.answer, db.fitb_answers.answer.count(),
-                    groupby=db.fitb_answers.answer, orderby=~db.fitb_answers.answer.count())
-        res = [{'answer':clean(row.fitb_answers.answer), 'count':row._extra.values()[0]} for row in rows[:10] ]
+                (db.fitb_answers.timestamp > dbcourse.term_start_date)).select(db.fitb_answers.answer, count_expr,
+                    groupby=db.fitb_answers.answer, orderby=~count_expr, limitby=(0, 10))
+        res = [{'answer':clean(row.fitb_answers.answer), 'count':row[count_expr]} for row in rows]
     except Exception as e:
         logger.debug(e)
         res = 'error in query'
@@ -780,27 +823,6 @@ def gettop10Answers():
         miscdata['reslist'] = resultList
 
     return json.dumps([res,miscdata])
-
-
-def getSphinxBuildStatus():
-    task_name = request.vars.task_name
-    course_url = request.vars.course_url
-
-    response.headers['content-type'] = 'application/json'
-    results = {'course_url': course_url}
-    row = scheduler.task_status(task_name)
-    if row:
-        if row['status'] in ['QUEUED', 'ASSIGNED','RUNNING', 'COMPLETED']:
-            results['status'] = row['status']
-        else:  # task failed
-            results['status'] = row['status']
-            tb = db(db.scheduler_run.task_id == row.id).select().first()['traceback']
-            results['traceback']=tb
-    else:
-        results['status'] = 'FAILED'
-        results['info'] = 'no row'
-        results['traceback'] = 'Sorry, no more info'
-    return json.dumps(results)
 
 
 def getassignmentgrade():
@@ -866,7 +888,7 @@ def getAssessResults():
 
     # Identify the correct event and query the database so we can load it from the server
     if event == "fillb":
-        rows = db((db.fitb_answers.div_id == div_id) & (db.fitb_answers.course_name == course) & (db.fitb_answers.sid == sid)).select(db.fitb_answers.answer, db.fitb_answers.timestamp, orderby=~db.fitb_answers.timestamp).first()
+        rows = db((db.fitb_answers.div_id == div_id) & (db.fitb_answers.course_name == course) & (db.fitb_answers.sid == sid)).select(db.fitb_answers.answer, db.fitb_answers.timestamp, orderby=~db.fitb_answers.id).first()
         if not rows:
             return ""   # server doesn't have it so we load from local storage instead
         #
@@ -880,31 +902,31 @@ def getAssessResults():
             res.update(res_update)
         return json.dumps(res)
     elif event == "mChoice":
-        rows = db((db.mchoice_answers.div_id == div_id) & (db.mchoice_answers.course_name == course) & (db.mchoice_answers.sid == sid)).select(db.mchoice_answers.answer, db.mchoice_answers.timestamp, db.mchoice_answers.correct, orderby=~db.mchoice_answers.timestamp).first()
+        rows = db((db.mchoice_answers.div_id == div_id) & (db.mchoice_answers.course_name == course) & (db.mchoice_answers.sid == sid)).select(db.mchoice_answers.answer, db.mchoice_answers.timestamp, db.mchoice_answers.correct, orderby=~db.mchoice_answers.id).first()
         if not rows:
             return ""
         res = {'answer': rows.answer, 'timestamp': str(rows.timestamp), 'correct': rows.correct}
         return json.dumps(res)
     elif event == "dragNdrop":
-        rows = db((db.dragndrop_answers.div_id == div_id) & (db.dragndrop_answers.course_name == course) & (db.dragndrop_answers.sid == sid)).select(db.dragndrop_answers.answer, db.dragndrop_answers.timestamp, db.dragndrop_answers.correct, db.dragndrop_answers.minHeight, orderby=~db.dragndrop_answers.timestamp).first()
+        rows = db((db.dragndrop_answers.div_id == div_id) & (db.dragndrop_answers.course_name == course) & (db.dragndrop_answers.sid == sid)).select(db.dragndrop_answers.answer, db.dragndrop_answers.timestamp, db.dragndrop_answers.correct, db.dragndrop_answers.minHeight, orderby=~db.dragndrop_answers.id).first()
         if not rows:
             return ""
         res = {'answer': rows.answer, 'timestamp': str(rows.timestamp), 'correct': rows.correct, 'minHeight': str(rows.minHeight)}
         return json.dumps(res)
     elif event == "clickableArea":
-        rows = db((db.clickablearea_answers.div_id == div_id) & (db.clickablearea_answers.course_name == course) & (db.clickablearea_answers.sid == sid)).select(db.clickablearea_answers.answer, db.clickablearea_answers.timestamp, db.clickablearea_answers.correct, orderby=~db.clickablearea_answers.timestamp).first()
+        rows = db((db.clickablearea_answers.div_id == div_id) & (db.clickablearea_answers.course_name == course) & (db.clickablearea_answers.sid == sid)).select(db.clickablearea_answers.answer, db.clickablearea_answers.timestamp, db.clickablearea_answers.correct, orderby=~db.clickablearea_answers.id).first()
         if not rows:
             return ""
         res = {'answer': rows.answer, 'timestamp': str(rows.timestamp), 'correct': rows.correct}
         return json.dumps(res)
     elif event == "timedExam":
-        rows = db((db.timed_exam.reset == None) & (db.timed_exam.div_id == div_id) & (db.timed_exam.course_name == course) & (db.timed_exam.sid == sid)).select(db.timed_exam.correct, db.timed_exam.incorrect, db.timed_exam.skipped, db.timed_exam.time_taken, db.timed_exam.timestamp, db.timed_exam.reset, orderby=~db.timed_exam.timestamp).first()
+        rows = db((db.timed_exam.reset == None) & (db.timed_exam.div_id == div_id) & (db.timed_exam.course_name == course) & (db.timed_exam.sid == sid)).select(db.timed_exam.correct, db.timed_exam.incorrect, db.timed_exam.skipped, db.timed_exam.time_taken, db.timed_exam.timestamp, db.timed_exam.reset, orderby=~db.timed_exam.id).first()
         if not rows:
             return ""
         res = {'correct': rows.correct, 'incorrect': rows.incorrect, 'skipped': str(rows.skipped), 'timeTaken': str(rows.time_taken), 'timestamp': str(rows.timestamp), 'reset': str(rows.reset)}
         return json.dumps(res)
     elif event == "parsons":
-        rows = db((db.parsons_answers.div_id == div_id) & (db.parsons_answers.course_name == course) & (db.parsons_answers.sid == sid)).select(db.parsons_answers.answer, db.parsons_answers.source, db.parsons_answers.timestamp, orderby=~db.parsons_answers.timestamp).first()
+        rows = db((db.parsons_answers.div_id == div_id) & (db.parsons_answers.course_name == course) & (db.parsons_answers.sid == sid)).select(db.parsons_answers.answer, db.parsons_answers.source, db.parsons_answers.timestamp, orderby=~db.parsons_answers.id).first()
         if not rows:
             return ""
         res = {'answer': rows.answer, 'source': rows.source, 'timestamp': str(rows.timestamp)}
@@ -915,6 +937,22 @@ def getAssessResults():
             return ""
         res = {'answer': row.answer, 'timestamp': str(row.timestamp)}
         return json.dumps(res)
+    elif event == "lp_build":
+        rows = db(
+            (db.lp_answers.div_id == div_id) &
+            (db.lp_answers.course_name == course) &
+            (db.lp_answers.sid == sid)
+        ).select(db.lp_answers.answer, db.lp_answers.timestamp, db.lp_answers.correct, orderby=~db.lp_answers.id).first()
+        if not rows:
+            return ""   # server doesn't have it so we load from local storage instead
+        answer = json.loads(rows.answer)
+        correct = rows.correct
+        return json.dumps({
+            'answer': answer,
+            'timestamp': str(rows.timestamp),
+            'correct': correct
+        })
+
 
 
 def checkTimedReset():
@@ -925,7 +963,7 @@ def checkTimedReset():
 
     divId = request.vars.div_id
     course = request.vars.course
-    rows = db((db.timed_exam.div_id == divId) & (db.timed_exam.sid == user) & (db.timed_exam.course_name == course)).select(orderby=~db.timed_exam.timestamp).first()
+    rows = db((db.timed_exam.div_id == divId) & (db.timed_exam.sid == user) & (db.timed_exam.course_name == course)).select(orderby=~db.timed_exam.id).first()
 
     if rows:        # If there was a scored exam
         if rows.reset == True:
@@ -948,8 +986,11 @@ def preview_question():
         # Prevent any changes to the database when building a preview question.
         del env['DBURL']
         # Run a runestone build.
+        # We would like to use sys.executable But when we run web2py
+        # in uwsgi then sys.executable is uwsgi which doesn't work.
+        # Why not just run runestone?
         popen_obj = subprocess.Popen(
-            [sys.executable, '-m', 'runestone', 'build'],
+            [settings.python_interpreter, '-m', 'runestone', 'build'],
             # The build must be run from the directory containing a ``conf.py`` and all the needed support files.
             cwd='applications/{}/build/preview'.format(request.application),
             # Capture the build output in case of an error.
@@ -967,11 +1008,11 @@ def preview_question():
             tree = html.fromstring(src)
             component = tree.cssselect(".runestone")
             if len(component) > 0:
-                ctext = html.tostring(component[0])
+                ctext = html.tostring(component[0]).decode('utf-8')
             else:
                 component = tree.cssselect(".system-message")
                 if len(component) > 0:
-                    ctext = html.tostring(component[0])
+                    ctext = html.tostring(component[0]).decode('utf-8')
                     logger.debug("error - ", ctext)
                 else:
                     ctext = "Error: Runestone content missing."
@@ -995,9 +1036,18 @@ def did_donate():
 
 
 def get_datafile():
-    course = request.vars.course_id
+    """
+    course_id - string, the name of the course
+    acid -  the acid of this datafile
+    """
+    course = request.vars.course_id  # the course name
+    the_course = db(db.courses.course_name == course).select().first()
     acid = request.vars.acid
-    file_contents = db((db.source_code.acid == acid) & (db.source_code.course_id == course)).select(db.source_code.main_code).first()
+    file_contents = db((db.source_code.acid == acid) &
+        ((db.source_code.course_id == the_course.base_course) |
+         (db.source_code.course_id == course))
+        ).select(db.source_code.main_code).first()
+
     if file_contents:
         file_contents = file_contents.main_code
     else:

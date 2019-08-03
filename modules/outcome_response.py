@@ -12,6 +12,7 @@
 # https://github.com/tophatmonocle/ims_lti_py
 
 from lxml import etree, objectify
+import six
 
 CODE_MAJOR_CODES = [
     'success',
@@ -61,7 +62,7 @@ class OutcomeResponse():
             setattr(self, opt, None)
 
         # Store specified options in our options member
-        for (key, val) in kwargs.iteritems():
+        for (key, val) in six.iteritems(kwargs):
             setattr(self, key, val)
 
     @staticmethod
