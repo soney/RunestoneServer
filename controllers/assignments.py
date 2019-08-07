@@ -371,13 +371,11 @@ def _calculate_totals(sid=None, student_rownum=None, assignment_name = None, ass
     else:
         return {'success': False, 'message': "Select an assignment before trying to calculate totals."}
 
-
 @auth.requires(lambda: verifyInstructorStatus(auth.user.course_name, auth.user), requires_login=True)
 def calculate_totals():
     assignment_name = request.vars.assignment
     sid = request.vars.get('sid', None)
     return json.dumps(_calculate_totals(sid=sid, assignment_name=assignment_name))
-
 
 def _autograde(sid=None, student_rownum=None, question_name=None, enforce_deadline=False, assignment_name=None, assignment_id=None, timezoneoffset=None):
     if assignment_id:
@@ -389,7 +387,7 @@ def _autograde(sid=None, student_rownum=None, question_name=None, enforce_deadli
     if assignment:
         count = do_autograde(assignment, auth.user.course_id, auth.user.course_name, sid, student_rownum, question_name,
                              enforce_deadline, timezoneoffset, db, settings)
-        return {'success': True, 'message': "autograded {} items".format(count)}
+        return {'success': True, 'message': "autograded {} items".format(count), 'count':count}
     else:
         return {'success': False, 'message': "Select an assignment before trying to autograde."}
 
@@ -401,6 +399,7 @@ def _try_to_send_lti_grade(student_row_num, assignment_id):
     assignment = _get_assignment(assignment_id)
     if not assignment:
         session.flash = "Failed to find assignment object for assignment {}".format(assignment_id)
+        return False
     else:
         grade = db(
             (db.grades.auth_user == student_row_num) &
@@ -408,10 +407,12 @@ def _try_to_send_lti_grade(student_row_num, assignment_id):
         if not grade:
             session.flash = "Failed to find grade object for user {} and assignment {}".format(auth.user.id,
                                                                                                assignment_id)
+            return False
         else:
             lti_record = _get_lti_record(session.oauth_consumer_key)
             if (not lti_record) or (not grade.lis_result_sourcedid) or (not grade.lis_outcome_url):
                 session.flash = "Failed to send grade back to LMS (Coursera, Canvas, Blackboard...), probably because the student accessed this assignment directly rather than using a link from the LMS, or because there is an error in the assignment link in the LMS. Please report this error."
+                return False
             else:
                 # really sending
                 # print("send_lti_grade({}, {}, {}, {}, {}, {}".format(assignment.points, grade.score, lti_record.consumer, lti_record.secret, grade.lis_outcome_url, grade.lis_result_sourcedid))
@@ -421,64 +422,36 @@ def _try_to_send_lti_grade(student_row_num, assignment_id):
                                secret=lti_record.secret,
                                outcome_url=grade.lis_outcome_url,
                                result_sourcedid=grade.lis_result_sourcedid)
-
-
-@auth.requires_login()
-def self_autograde():
-    if not settings.coursera_mode:
-        return json.dumps({'success': False, 'message': "Not in Coursera mode; can't self_autograde"})
-    assignment_id = request.vars.assignment_id
-    timezoneoffset = session.timezoneoffset if 'timezoneoffset' in session else None
-
-    res = _autograde(student_rownum=auth.user.id,
-                     assignment_id=assignment_id,
-                     timezoneoffset=timezoneoffset)
-    if not res['success']:
-        session.flash = "Failed to autograde individual questions for user id {} for assignment {}".format(auth.user.id, assignment_id)
-    else:
-        res2 = _calculate_totals(student_rownum=auth.user.id, assignment_id=assignment_id)
-        if not res2['success']:
-            session.flash = "Failed to compute totals for user id {} for assignment {}".format(auth.user.id, assignment_id)
-        else:
-            # try to send lti grades
-            assignment = _get_assignment(assignment_id)
-            if not assignment:
-                session.flash = "Failed to find assignment object for assignment {}".format(assignment_id)
-            else:
-                grade = db(
-                    (db.grades.auth_user == auth.user.id) &
-                    (db.grades.assignment == assignment_id)).select().first()
-                if not grade:
-                    session.flash = "Failed to find grade object for user {} and assignment {}".format(auth.user.id, assignment_id)
-                else:
-                    lti_record = _get_lti_record(session.oauth_consumer_key)
-                    if (not lti_record) or (not grade.lis_result_sourcedid) or (not grade.lis_outcome_url):
-                        session.flash = "Failed to send grade back to LMS (Coursera, Canvas, Blackboard...), probably because the student accessed this assignment directly rather than using a link from the LMS, or because there is an error in the assignment link in the LMS. Please report this error."
-                    else:
-                        # really sending
-                        send_lti_grade(assignment.points,
-                                       score=grade.score,
-                                       consumer=lti_record.consumer,
-                                       secret=lti_record.secret,
-                                       outcome_url=grade.lis_outcome_url,
-                                       result_sourcedid=grade.lis_result_sourcedid)
-    return json.dumps({})
+                return True
 
 @auth.requires_login()
 def student_autograde():
     """
     This is a safe endpoint that students can call from the assignment page
-    to get a preliminary grade on their assignment.
+    to get a preliminary grade on their assignment. If in coursera_mode,
+    the total for the assignment is calculated and stored in the db, and
+    sent via LTI (if LTI is configured).
     """
     assignment_id = request.vars.assignment_id
     timezoneoffset = session.timezoneoffset if 'timezoneoffset' in session else None
-    assignment = db(db.assignments.id == assignment_id).select().first()
-    if assignment:
-        count = do_autograde(assignment, auth.user.course_id, auth.user.course_name,
-            auth.user.username, None, 'false', timezoneoffset, db, settings)
-        return json.dumps({'message': "autograded {} items".format(count)})
+
+
+    res = _autograde(student_rownum=auth.user.id,
+                     assignment_id=assignment_id,
+                     timezoneoffset=timezoneoffset)
+
+    if not res['success']:
+        session.flash = "Failed to autograde questions for user id {} for assignment {}".format(auth.user.id, assignment_id)
+        res = {'success':False}
     else:
-        return json.dumps({'success': False, 'message': "Could not find this assignment -- This should not happen"})
+        if settings.coursera_mode:
+            res2 = _calculate_totals(student_rownum=auth.user.id, assignment_id=assignment_id)
+            if not res2['success']:
+                session.flash = "Failed to compute totals for user id {} for assignment {}".format(auth.user.id, assignment_id)
+                res = {'success':False}
+            else:
+                _try_to_send_lti_grade(auth.user.id, assignment_id)
+    return json.dumps(res)
 
 
 @auth.requires(lambda: verifyInstructorStatus(auth.user.course_name, auth.user), requires_login=True)
@@ -618,11 +591,8 @@ def get_problem():
         res['file_includes'] = [{'acid': acid, 'contents': get_source(acid)} for acid in file_divs]
     return json.dumps(res)
 
-
+@auth.requires_login()
 def doAssignment():
-    if not auth.user:
-        session.flash = "Please Login"
-        return redirect(URL('default', 'index'))
 
     course = db(db.courses.id == auth.user.course_id).select().first()
     assignment_id = request.vars.assignment_id
@@ -794,19 +764,13 @@ def doAssignment():
                 readings=readings,
                 questions_score=questions_score,
                 readings_score=readings_score,
-                # These are from coursera version of student-initiated grading
-                autogradingUrl=URL('assignments', 'self_autograde'),
-                gradeRecordingUrl=URL('assignments', 'record_grade'),
-                calcTotalsURL=URL('assignments', 'calculate_totals'),
-                student_id=auth.user.id,
-                # these are from upstream version
-                student_id = auth.user.username,
-                released = assignment['released'])
+                # gradeRecordingUrl=URL('assignments', 'record_grade'),
+                # calcTotalsURL=URL('assignments', 'calculate_totals'),
+                student_id=auth.user.username,
+                released=assignment['released'])
 
+@auth.requires_login()
 def chooseAssignment():
-    if not auth.user:
-        session.flash = "Please Login"
-        return redirect(URL('default', 'index'))
 
     course = db(db.courses.id == auth.user.course_id).select().first()
     assignments = db((db.assignments.course == course.id) & (db.assignments.visible == 'T')).select(
@@ -837,10 +801,8 @@ def _get_practice_completion(user_id, course_name, spacing):
               (db.user_topic_practice_log.q != -1)).count()
 
 # Called when user clicks "I'm done" button.
+@auth.requires_login()
 def checkanswer():
-    if not auth.user:
-        session.flash = "Please Login"
-        return redirect(URL('default', 'index'))
 
     sid = auth.user.id
     course_name = auth.user.course_name
@@ -886,17 +848,15 @@ def settz_then_practice():
 
 
 # Gets invoked from practice if there is no record in course_practice for this course or the practice is not started.
+@auth.requires_login()
 def practiceNotStartedYet():
     return dict(course=get_course_row(db.courses.ALL), course_id=auth.user.course_name,
                 message1=bleach.clean(request.vars.message1 or ''), message2=bleach.clean(request.vars.message2 or ''))
 
 
 # Gets invoked when the student requests practicing topics.
+@auth.requires_login()
 def practice():
-    if not auth.user:
-        session.flash = "Please Login"
-        return redirect(URL('default', 'index'))
-
     if not session.timezoneoffset:
         session.timezoneoffset = 0
 
@@ -1096,10 +1056,8 @@ def practice():
 
 
 # Called when user clicks like or dislike icons.
+@auth.requires_login()
 def like_dislike():
-    if not auth.user:
-        session.flash = "Please Login"
-        return redirect(URL('default', 'index'))
 
     sid = auth.user.id
     course_name = auth.user.course_name
@@ -1119,10 +1077,8 @@ def like_dislike():
 
 
 # Called when user submits their feedback at the end of practicing.
+@auth.requires_login()
 def practice_feedback():
-    if not auth.user:
-        session.flash = "Please Login"
-        return redirect(URL('default', 'index'))
 
     sid = auth.user.id
     course_name = auth.user.course_name
