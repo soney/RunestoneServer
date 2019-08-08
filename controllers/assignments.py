@@ -900,7 +900,7 @@ def practice():
                         (db.user_topic_practice.user_id == auth.user.id) &
                         (db.user_topic_practice.chapter_label == db.chapters.chapter_label) &
                         (db.user_topic_practice.sub_chapter_label == db.sub_chapters.sub_chapter_label) &
-                        (db.chapters.course_id == auth.user.course_name) &
+                        (db.chapters.course_id == course.base_course) &
                         (db.sub_chapters.chapter_id == db.chapters.id)) \
             .select(db.chapters.chapter_name,
                     db.sub_chapters.sub_chapter_name,
