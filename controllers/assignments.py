@@ -18,10 +18,13 @@ from collections import OrderedDict
 # Third-party imports
 # -------------------
 from psycopg2 import IntegrityError
-from rs_grading import do_autograde, do_calculate_totals, do_check_answer, send_lti_grade
-from db_dashboard import DashboardDataAnalyzer
 import six
 import bleach
+
+# Local application imports
+# -------------------------
+from rs_grading import do_autograde, do_calculate_totals, do_check_answer, send_lti_grade, _get_lti_record, _try_to_send_lti_grade
+from db_dashboard import DashboardDataAnalyzer
 
 logger = logging.getLogger(settings.logger)
 logger.setLevel(settings.log_level)
@@ -391,39 +394,6 @@ def _autograde(sid=None, student_rownum=None, question_name=None, enforce_deadli
     else:
         return {'success': False, 'message': "Select an assignment before trying to autograde."}
 
-def _get_assignment(assignment_id):
-    return db(db.assignments.id == assignment_id).select().first()
-
-def _try_to_send_lti_grade(student_row_num, assignment_id):
-    # try to send lti grades
-    assignment = _get_assignment(assignment_id)
-    if not assignment:
-        session.flash = "Failed to find assignment object for assignment {}".format(assignment_id)
-        return False
-    else:
-        grade = db(
-            (db.grades.auth_user == student_row_num) &
-            (db.grades.assignment == assignment_id)).select().first()
-        if not grade:
-            session.flash = "Failed to find grade object for user {} and assignment {}".format(auth.user.id,
-                                                                                               assignment_id)
-            return False
-        else:
-            lti_record = _get_lti_record(session.oauth_consumer_key)
-            if (not lti_record) or (not grade.lis_result_sourcedid) or (not grade.lis_outcome_url):
-                session.flash = "Failed to send grade back to LMS (Coursera, Canvas, Blackboard...), probably because the student accessed this assignment directly rather than using a link from the LMS, or because there is an error in the assignment link in the LMS. Please report this error."
-                return False
-            else:
-                # really sending
-                # print("send_lti_grade({}, {}, {}, {}, {}, {}".format(assignment.points, grade.score, lti_record.consumer, lti_record.secret, grade.lis_outcome_url, grade.lis_result_sourcedid))
-                send_lti_grade(assignment.points,
-                               score=grade.score,
-                               consumer=lti_record.consumer,
-                               secret=lti_record.secret,
-                               outcome_url=grade.lis_outcome_url,
-                               result_sourcedid=grade.lis_result_sourcedid)
-                return True
-
 @auth.requires_login()
 def student_autograde():
     """
@@ -616,27 +586,8 @@ def doAssignment():
             return redirect(URL('assignments', 'chooseAssignment'))
 
 
-
-
-    # alternative version using joins
-    # questions = db((db.chapters.course_id == course.course_name) & \
-    #                (db.sub_chapters.chapter_id == db.chapters.id) & \
-    #                (db.assignment_questions.assignment_id == assignment.id)) \
-    #     .select(db.questions.name,
-    #             db.questions.htmlsrc,
-    #             db.questions.id,
-    #             db.questions.chapter,
-    #             db.questions.subchapter,
-    #             db.assignment_questions.points,
-    #             db.assignment_questions.activities_required,
-    #             db.assignment_questions.reading_assignment,
-    #             db.chapters.chapter_name,
-    #             db.sub_chapters.sub_chapter_name,
-    #             orderby=db.assignment_questions.sorting_priority,
-    #             join=db.assignment_questions.on(db.questions.id == db.assignment_questions.question_id),
-    #             left=[db.chapters.on(db.questions.chapter == db.chapters.chapter_label),
-    #                   db.sub_chapters.on(db.questions.subchapter == db.sub_chapters.sub_chapter_label)]
-    #             )
+    if assignment.points is None:
+        assignment.points = 0
 
 
     questions = db((db.assignment_questions.assignment_id == assignment.id) & \
@@ -779,9 +730,6 @@ def chooseAssignment():
 
 
 # The rest of the file is about the the spaced practice:
-
-def _get_lti_record(oauth_consumer_key):
-    return db(db.lti_keys.consumer == oauth_consumer_key).select().first()
 
 def _get_course_practice_record(course_name):
     return db(db.course_practice.course_name == course_name).select().first()
@@ -945,7 +893,7 @@ def practice():
                                              flashcard.sub_chapter_label)
     # If the student has any flashcards to practice and has not practiced enough to get their points for today or they
     # have intrinsic motivation to practice beyond what they are expected to do.
-    if (available_flashcards_num > 0 and 
+    if (available_flashcards_num > 0 and
         len(questions) > 0 and
         (practiced_today_count != questions_to_complete_day or
             request.vars.willing_to_continue or

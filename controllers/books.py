@@ -20,6 +20,9 @@ import os
 import posixpath
 import json
 import logging
+import datetime
+import importlib
+
 
 logger = logging.getLogger(settings.logger)
 logger.setLevel(settings.log_level)
@@ -223,4 +226,41 @@ def draft():
 
 # Serve from the ``published`` directory, instead of the ``build`` directory.
 def published():
+    if len(request.args) == 0:
+        return index()
     return _route_book()
+
+def index():
+    """
+    Called by default (and by published if no args)
+
+    Produce a list of books based on the directory structure of runestone/books
+
+    """
+
+    book_list = os.listdir('applications/{}/books'.format(request.application))
+    book_list = [book for book in book_list if '.git' not in book]
+
+    res = []
+    for book in sorted(book_list):
+        try:
+            # WARNING: This imports from ``applications.<runestone application name>.books.<book name>``. Since ``runestone/books/<book_name>`` lacks an ``__init__.py``, it will be treated as a `namespace package <https://www.python.org/dev/peps/pep-0420/>`_. Therefore, odd things will happen if there are other modules named ``applications.<runestone application name>.books.<book name>`` in the Python path.
+            config = importlib.import_module('applications.{}.books.{}.conf'.format(request.application, book))
+        except:
+            continue
+        book_info = {}
+        if hasattr(config, 'navbar_title'):
+            book_info['title'] = config.navbar_title
+        elif hasattr(config, 'html_title'):
+            book_info['title'] = config.html_title
+        elif hasattr(config, 'html_short_title'):
+            book_info['title'] = config.html_short_title
+        else:
+            book_info['title'] = 'Runestone Book'
+
+        book_info['url'] = '/{}/books/published/{}/index.html'.format(request.application, book)
+        book_info['regname'] = book
+
+        res.append(book_info)
+
+    return dict(book_list=res)

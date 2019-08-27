@@ -237,6 +237,11 @@ def grades():
     assignments = db(db.assignments.course == course.id).select(db.assignments.ALL,
                     orderby=(db.assignments.duedate, db.assignments.id))
 
+    # recalculate total points for each assignment in case the stored
+    # total is out of sync.
+    for assign in assignments:
+        assign.points = update_total_points(assign.id)
+
     students = db(
         (db.user_courses.course_id == auth.user.course_id) &
         (db.auth_user.id == db.user_courses.user_id)
@@ -337,20 +342,34 @@ def questiongrades():
         redirect(URL('dashboard','index'))
 
     course = db(db.courses.id == auth.user.course_id).select().first()
+
+    # make sure points total is up to date
+    assignment_id = request.vars.assignment_id
+    update_total_points(assignment_id)
+
     assignment = db((db.assignments.id == request.vars.assignment_id) & (db.assignments.course == course.id)).select().first()
     sid = request.vars.sid
     student = db(db.auth_user.username == sid).select(db.auth_user.first_name, db.auth_user.last_name)
 
     query = ("""select questions.name, score, points
         from questions join assignment_questions on (questions.id = assignment_questions.question_id)
-             join question_grades on (questions.name = question_grades.div_id)
-             where assignment_id = %s and sid = %s and question_grades.course_name = %s;""")
-    rows = db.executesql(query, [assignment['id'], sid, course.course_name])
+        left outer join question_grades on (questions.name = question_grades.div_id
+            and sid = %s and question_grades.course_name = %s)
+            where assignment_id = %s ;""")
+    rows = db.executesql(query, [sid, course.course_name, assignment['id']])
     if not student or not rows:
         session.flash = "Student {} not found for course {}".format(sid, course.course_name)
         return redirect(URL('dashboard','grades'))
 
     return dict(assignment=assignment, student=student, rows=rows, total=0, course=course)
+
+def update_total_points(assignment_id):
+    sum_op = db.assignment_questions.points.sum()
+    total = db(db.assignment_questions.assignment_id == assignment_id).select(sum_op).first()[sum_op]
+    db(db.assignments.id == assignment_id).update(
+        points=total
+    )
+    return total
 
 # Note this is meant to be called from a form submission not as a bare endpoint
 @auth.requires_login()

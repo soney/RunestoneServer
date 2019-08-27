@@ -2,12 +2,13 @@ import signal
 from os import path
 import os
 import datetime
+import re
 from random import randint
 from collections import OrderedDict
 from paver.easy import sh
 import json
 from runestone import cmap
-from rs_grading import send_lti_grades
+from rs_grading import send_lti_grades, _get_assignment
 from dateutil.parser import parse
 import pandas as pd
 
@@ -683,6 +684,12 @@ def removeStudents():
         if studentID.isdigit() and int(studentID) != auth.user.id:
             sid = db(db.auth_user.id == int(studentID)).select(db.auth_user.username).first()
             db((db.user_courses.user_id == int(studentID)) & (db.user_courses.course_id == auth.user.course_id)).delete()
+            section = db((db.sections.course_id == auth.user.course_id) &
+                         (db.section_users.auth_user == int(studentID)) &
+                         (db.section_users.section == db.sections.id)).select().first()
+            if section:
+                db(db.section_users.id == section.section_users.id).delete()
+
             db.user_courses.insert(user_id=int(studentID), course_id=baseCourseID)
             db(db.auth_user.id == int(studentID)).update(course_id=baseCourseID, course_name=baseCourseName, active='F')
             db( (db.useinfo.sid == sid) &
@@ -767,6 +774,7 @@ def deletecourse():
 @auth.requires(lambda: verifyInstructorStatus(auth.user.course_name, auth.user), requires_login=True)
 def removeassign():
     response.headers['content-type'] = 'application/json'
+
     try:
         assignment_id = int(request.vars['assignid'])
     except:
@@ -774,6 +782,7 @@ def removeassign():
         logger.error("Cannot Remove Assignment {}".format(request.args(0)))
         return "Error"
 
+    logger.debug("Removing assignment {}".format(assignment_id))
     ct = db(db.assignments.id == assignment_id).delete()
 
     if ct == 1:
@@ -788,24 +797,30 @@ def removeassign():
 def createAssignment():
     response.headers['content-type'] = 'application/json'
     due = None
-    logger.debug(type(request.vars['name']))
+    name = ''
+
+    if 'name' in request.vars and len(request.vars['name']) > 0:
+        name = request.vars['name']
+    else:
+        return json.dumps('ERROR')
+
+    course=auth.user.course_id
+    logger.debug("Adding new assignment {} for course".format(name, course))
+    name_existsQ = len(db((db.assignments.name == name) & (db.assignments.course == course)).select())
+    if name_existsQ > 0:
+        return json.dumps("EXISTS")
+
     try:
-        name=request.vars['name']
-        course=auth.user.course_id
-        logger.debug("Adding new assignment {} for course".format(request.vars['name'], course))
-        name_existsQ = len(db((db.assignments.name == name) & (db.assignments.course == course)).select())
-        if name_existsQ>0:
-            return json.dumps("EXISTS")
         newassignID = db.assignments.insert(course=course, name=name, duedate=datetime.datetime.utcnow() + datetime.timedelta(days=7))
+        db.commit()
     except Exception as ex:
-        logger.error(ex)
+        logger.error("ERROR CREATING ASSIGNMENT", ex)
         return json.dumps('ERROR')
-    try:
-        returndict = {request.vars['name']: newassignID}
-        return json.dumps(returndict)
-    except Exception as ex:
-        logger.error(ex)
-        return json.dumps('ERROR')
+
+    returndict = {name: newassignID}
+    return json.dumps(returndict)
+
+
 
 @auth.requires(lambda: verifyInstructorStatus(auth.user.course_name, auth.user), requires_login=True)
 def renameAssignment():
@@ -1079,12 +1094,23 @@ def createquestion():
     assignmentid = int(aid)
     points = int(request.vars['points']) if request.vars['points'] else 1
     timed = request.vars['timed']
+    unittest = None
+    if re.search(':autograde:\s+unittest', request.vars.question):
+        unittest = "unittest"
 
     try:
-        newqID = db.questions.insert(base_course=base_course, name=request.vars['name'], chapter=request.vars['chapter'],
-                 subchapter=request.vars['subchapter'], author=auth.user.first_name + " " + auth.user.last_name, difficulty=request.vars['difficulty'],
-                 question=request.vars['question'], timestamp=datetime.datetime.utcnow(), question_type=request.vars['template'],
-                 is_private=request.vars['isprivate'], htmlsrc=request.vars['htmlsrc'])
+        newqID = db.questions.insert(base_course=base_course, name=request.vars['name'],
+            chapter=request.vars['chapter'],
+            subchapter=request.vars['subchapter'],
+            author=auth.user.first_name + " " + auth.user.last_name,
+            autograde=unittest,
+            difficulty=request.vars['difficulty'],
+            question=request.vars['question'],
+            timestamp=datetime.datetime.utcnow(),
+            question_type=request.vars['template'],
+            is_private=request.vars['isprivate'],
+            from_source=False,
+            htmlsrc=request.vars['htmlsrc'])
 
         assignment_question = db.assignment_questions.insert(assignment_id=assignmentid, question_id=newqID, timed=timed, points=points)
 
@@ -1128,9 +1154,6 @@ def getGradeComments():
         return json.dumps({'grade':c.score, 'comments':c.comment})
     else:
         return json.dumps("Error")
-
-def _get_assignment(assignment_id):
-    return db(db.assignments.id == assignment_id).select().first()
 
 def _get_lti_record(oauth_consumer_key):
     if oauth_consumer_key:
@@ -1354,7 +1377,7 @@ def _add_q_meta_info(qrow):
         'dragndrop': 'Matching ✓',
         'parsonsprob': 'Parsons ✓',
         'codelens': 'CodeLens',
-        'lp_build': 'LP',
+        'lp_build': 'LP ✓',
         'shortanswer': 'ShortAns',
         'actex': 'ActiveCode',
         'fillintheblank': 'FillB ✓'
@@ -1378,6 +1401,7 @@ def get_assignment():
         session.flash = 'Error assignment ID is undefined'
         return redirect(URL('assignments','index'))
 
+    _set_assignment_max_points(assignment_id)
     assignment_data = {}
     assignment_row = db(db.assignments.id == assignment_id).select().first()
     assignment_data['assignment_points'] = assignment_row.points
@@ -1463,9 +1487,11 @@ def save_assignment():
         logger.error("Bad Date format for assignment: {}".format(d_str))
         due = datetime.datetime.utcnow() + datetime.timedelta(7)
     try:
+        total = _set_assignment_max_points(assignment_id)
         db(db.assignments.id == assignment_id).update(
             course=auth.user.course_id,
             description=request.vars['description'],
+            points=total,
             duedate=due,
             visible=request.vars['visible']
         )
@@ -1654,6 +1680,7 @@ def copy_assignment():
       - course
     """
 
+    res = None
     if not verifyInstructorStatus(request.vars['course'], auth.user):
         return "Error: Not Authorized"
     else:
@@ -1667,7 +1694,10 @@ def copy_assignment():
                     break
         else:
             res = _copy_one_assignment(request.vars['course'], request.vars['oldassignment'])
-    return res
+    if res is None:
+        return "Error: No Assignments to copy"
+    else:
+        return res
 
 def _copy_one_assignment(course, oldid):
         old_course = db(db.courses.course_name == course).select().first()
