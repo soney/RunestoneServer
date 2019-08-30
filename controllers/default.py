@@ -183,13 +183,14 @@ def index():
         for row in in_db:
             db_check.append(row)
         if not db_check:
-            # The user hasn't been enrolled in this course yet. Check the price for the course.
-            price = _course_price(auth.user.course_id)
-            # If the price is non-zero, then require a payment. Otherwise, ask for a donation.
-            if price > 0:
-                redirect(URL('payment'))
-            else:
-                session.request_donation = True
+            if settings.academy_mode:
+                # The user hasn't been enrolled in this course yet. Check the price for the course.
+                price = _course_price(auth.user.course_id)
+                # If the price is non-zero, then require a payment. Otherwise, ask for a donation.
+                if price > 0:
+                    redirect(URL('payment'))
+                else:
+                    session.request_donation = True
             db.user_courses.insert(user_id=auth.user.id, course_id=auth.user.course_id)
         try:
             logger.debug("INDEX - checking for progress table")
