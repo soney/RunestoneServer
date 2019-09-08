@@ -1,6 +1,7 @@
 from os import path
 import os
 import datetime
+from dateutil.parser import parse
 import re
 from random import randint
 from collections import OrderedDict
@@ -1275,6 +1276,10 @@ def getQuestionInfo():
     requires_login=True,
 )
 def edit_question():
+    """
+    Called to save an updated version of an existing question
+    1. Can only be updated by the original author
+    """
     vars = request.vars
     old_qname = vars["question"]
     new_qname = vars["name"]
@@ -1769,12 +1774,14 @@ def _get_toc_and_questions():
             #     p_sub_ch_info['state'] = {'checked':
             #                               (ch.chapter_name, sub_ch.sub_chapter_name) in chapters_and_subchapters_taught}
             # include another level for questions only in the question picker
+            author = auth.user.first_name + " " + auth.user.last_name
             questions_query = db(
                 (db.courses.course_name == auth.user.course_name)
                 & (db.questions.base_course == db.courses.base_course)
                 & (db.questions.chapter == ch.chapter_label)
                 & (db.questions.question_type != "page")
                 & (db.questions.subchapter == sub_ch.sub_chapter_label)
+                & ((db.questions.author == author) | (db.questions.is_private == "F"))
             ).select(orderby=db.questions.id)
             for question in questions_query:
                 q_info = dict(
@@ -2299,6 +2306,53 @@ def courselog():
         "Content-Disposition"
     ] = "attachment; filename=data_for_{}.csv".format(auth.user.course_name)
     return data.to_csv(na_rep=" ")
+
+
+@auth.requires(
+    lambda: verifyInstructorStatus(auth.user.course_name, auth.user),
+    requires_login=True,
+)
+def update_course():
+    response.headers["Content-Type"] = "application/json"
+
+    thecourse = db(db.courses.id == auth.user.course_id).select().first()
+    if thecourse:
+        if "new_date" in request.vars:
+            new_date = request.vars["new_date"]
+            try:
+                new_date = str(parse(new_date).date())
+                db(db.courses.id == thecourse.id).update(term_start_date=new_date)
+            except ValueError:
+                logger.error("Bad Date in update_course {}".format(new_date))
+                return json.dumps(dict(status="failed"))
+        elif "new_pair" in request.vars:
+            db(db.courses.id == thecourse.id).update(
+                allow_pairs=request.vars["new_pair"]
+            )
+
+        return json.dumps(dict(status="success"))
+
+    return json.dumps(dict(status="failed"))
+
+
+@auth.requires(
+    lambda: verifyInstructorStatus(auth.user.course_name, auth.user),
+    requires_login=True,
+)
+def flag_question():
+    qname = request.vars["question_name"]
+
+    base_course = (
+        db(db.courses.id == auth.user.course_id)
+        .select(db.courses.base_course)
+        .first()
+        .base_course
+    )
+    db((db.questions.name == qname) & (db.questions.base_course == base_course)).update(
+        review_flag="T"
+    )
+
+    return json.dumps(dict(status="success"))
 
 
 def killer():

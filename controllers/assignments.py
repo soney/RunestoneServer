@@ -646,11 +646,15 @@ def record_grade():
     if "acid" not in request.vars or "sid" not in request.vars:
         return json.dumps({"success": False, "message": "Need problem and user."})
 
-    score_str = request.vars.get("grade", 0)
+    score_str = request.vars.get("grade", "").strip()
     if score_str == "":
         score = 0
     else:
-        score = float(score_str)
+        try:
+            score = float(score_str)
+        except ValueError as e:
+            logger.error("Bad Score: {} - Details: {}".format(score_str, e))
+            return json.dumps({"response": "not replaced"})
     comment = request.vars.get("comment", None)
     if score_str != "" or ("comment" in request.vars and comment != ""):
         try:
@@ -929,6 +933,7 @@ def doAssignment():
                         db.user_sub_chapter_progress.sub_chapter_id
                         == q.questions.subchapter
                     )
+                    & (db.user_sub_chapter_progress.chapter_id == q.questions.chapter)
                 )
                 .select()
                 .first()
@@ -1010,8 +1015,8 @@ def _get_student_practice_grade(sid, course_name):
 def _get_practice_completion(user_id, course_name, spacing):
     if spacing == 1:
         return db(
-            (db.user_topic_practice_Completion.course_name == course_name)
-            & (db.user_topic_practice_Completion.user_id == user_id)
+            (db.user_topic_practice_completion.course_name == course_name)
+            & (db.user_topic_practice_completion.user_id == user_id)
         ).count()
     return db(
         (db.user_topic_practice_log.course_name == course_name)
@@ -1261,15 +1266,15 @@ def practice():
 
         # Add a practice completion record for today, if there isn't one already.
         practice_completion_today = db(
-            (db.user_topic_practice_Completion.course_name == auth.user.course_name)
-            & (db.user_topic_practice_Completion.user_id == auth.user.id)
+            (db.user_topic_practice_completion.course_name == auth.user.course_name)
+            & (db.user_topic_practice_completion.user_id == auth.user.id)
             & (
-                db.user_topic_practice_Completion.practice_completion_date
+                db.user_topic_practice_completion.practice_completion_date
                 == now_local.date()
             )
         )
         if practice_completion_today.isempty():
-            db.user_topic_practice_Completion.insert(
+            db.user_topic_practice_completion.insert(
                 user_id=auth.user.id,
                 course_name=auth.user.course_name,
                 practice_completion_date=now_local.date(),

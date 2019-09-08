@@ -316,8 +316,8 @@ def grades():
         if practice_setting:
             if practice_setting.spacing == 1:
                 practice_completion_count = db(
-                    (db.user_topic_practice_Completion.course_name == s.course_name)
-                    & (db.user_topic_practice_Completion.user_id == s.id)
+                    (db.user_topic_practice_completion.course_name == s.course_name)
+                    & (db.user_topic_practice_completion.user_id == s.id)
                 ).count()
                 total_possible_points = (
                     practice_setting.day_points * practice_setting.max_practice_days
@@ -568,10 +568,12 @@ def subchapoverview():
     pt = data.pivot_table(index=idxlist, values=values, columns="sid", aggfunc=afunc)
 
     # TODO: debug tests so these can be live
-    # if pt.empty:
-    #     logger.error("Empty Dataframe after pivot for {} ".format(auth.user.course_name))
-    #     session.flash = "Error: Not enough data"
-    #     return redirect(URL('dashboard','index'))
+    if pt.empty:
+        logger.error(
+            "Empty Dataframe after pivot for {} ".format(auth.user.course_name)
+        )
+        session.flash = "Error: Not enough data"
+        return redirect(URL("dashboard", "index"))
 
     cmap = pd.read_sql_query(
         """select chapter_num, sub_chapter_num, chapter_label, sub_chapter_label
