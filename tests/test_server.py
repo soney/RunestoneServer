@@ -159,6 +159,7 @@ def test_killer(test_assignment, test_client, test_user_1, runestone_db_tools):
             "This page allows you to select a book for your own class.",
             1,
         ),
+        ("designer/build", True, "You must select a base course", 1),
         # **OAuth**
         # ----------
         (
@@ -195,7 +196,7 @@ def test_validate_user_pages(
         #
         # **Admin**
         # ----------
-        ("admin/admin", "Manage Section", 1),
+        ("admin/admin", "Manage Section", 2),
         ("admin/course_students", '"test_user_1"', 2),
         ("admin/createAssignment", "ERROR", None),
         ("admin/grading", "assignment", 1),
