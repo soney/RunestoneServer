@@ -545,8 +545,7 @@ def _autograde_one_q(
 
     # use query results and the scoring function
     if results:
-        print("WTG = ", which_to_grade)
-        if which_to_grade in ["first_answer", "last_answer", None, ""]:
+        if which_to_grade in ["first_answer", "last_answer", None]:
             # get single row
             if which_to_grade == "first_answer":
                 row = results.first()

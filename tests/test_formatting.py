@@ -11,11 +11,14 @@ def tests_black_format_check():
     else:
         pd = "applications/runestone"
     with pushd(pd):
-        xqt(
+        rc = xqt(
             "{} -m black --check controllers models modules tests --exclude 1.py".format(
                 sys.executable
-            )
+            ),
+            universal_newlines=True,
         )
+        print(rc.stdout + rc.stderr)
+        assert rc.returncode == 0
 
 
 def test_flake8_lint():
@@ -30,4 +33,10 @@ def test_flake8_lint():
         models = os.listdir("models")
         controllers = [x for x in controllers + models if x.endswith(".py")]
         for c in controllers:
-            xqt("{} -m flake8 controllers/{}".format(sys.executable, c))
+            print(c)
+            rc = xqt(
+                "{} -m flake8 controllers/{}".format(sys.executable, c),
+                universal_newlines=True,
+            )
+            print(rc.stdout + rc.stderr)
+            assert rc.returncode == 0

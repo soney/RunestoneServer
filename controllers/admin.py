@@ -664,8 +664,6 @@ def admin():
     ).select(db.courses.course_name, db.courses.id)
 
     curr_start_date = course.term_start_date.strftime("%m/%d/%Y")
-    downloads_enabled = "true" if sidQuery.downloads_enabled else "false"
-    allow_pairs = "true" if sidQuery.allow_pairs else "false"
     return dict(
         sectionInfo=sectionsList,
         startDate=date,
@@ -680,8 +678,6 @@ def admin():
         my_vers=my_vers,
         mst_vers=mst_vers,
         course=sidQuery,
-        downloads_enabled=downloads_enabled,
-        allow_pairs=allow_pairs,
         instructor_course_list=instructor_course_list,
     )
 
@@ -747,9 +743,7 @@ def grading():
             questions.append(question_name)
             question_points[question_name] = q.points
         assignments[row.name] = questions
-        assignment_deadlines[row.name] = row.duedate.replace(
-            tzinfo=datetime.timezone.utc
-        ).isoformat()
+        assignment_deadlines[row.name] = row.duedate.isoformat()
 
     cur_students = db(db.user_courses.course_id == auth.user.course_id).select(
         db.user_courses.user_id
@@ -855,9 +849,6 @@ def removeStudents():
         studentList = [request.vars["studentList"]]
 
     for studentID in studentList:
-        logger.warning(
-            "{} has requested the removal of {}".format(auth.user.username, studentID)
-        )
         if studentID.isdigit() and int(studentID) != auth.user.id:
             sid = (
                 db(db.auth_user.id == int(studentID))
@@ -1329,9 +1320,6 @@ def edit_question():
         if newq and newq.author != author:
             return "You cannot replace a question you did not author"
 
-    autograde = ""
-    if re.search(r":autograde:\s+unittest", question):
-        autograde = "unittest"
     try:
         new_qid = db.questions.update_or_insert(
             (db.questions.name == new_qname)
@@ -1346,8 +1334,6 @@ def edit_question():
             subchapter=subchapter,
             question_type=question_type,
             htmlsrc=htmlsrc,
-            autograde=autograde,
-            from_source=False,
         )
         if tags and tags != "null":
             tags = tags.split(",")
@@ -2005,7 +1991,6 @@ def add__or_update_assignment_question():
     # -- autograde
     # -- which_to_grade
     # -- reading_assignment (boolean, true if it's a page to visit rather than a directive to interact with)
-    # -- sort_position (optional)
     if request.vars.assignment == "undefined":
         session.flash = (
             "Error: Unable to update assignment in DB. No assignment is selected"
@@ -2047,9 +2032,7 @@ def add__or_update_assignment_question():
 
     # Get the current sorting priority for a question, if its there.
     # otherwise assign it to the end of the list.
-    tmpSp = request.vars["sort_position"]
-    if not tmpSp:
-        tmpSp = _get_question_sorting_priority(assignment_id, question_id)
+    tmpSp = _get_question_sorting_priority(assignment_id, question_id)
 
     if tmpSp is None:
         tmpSp = _get_max_sorting_priority(assignment_id) or 0
@@ -2089,10 +2072,8 @@ def add__or_update_assignment_question():
     autograde = request.vars.get("autograde")
     which_to_grade = request.vars.get("which_to_grade")
     # Make sure the defaults are set correctly for activecode Qs
-    if (
-        question_type in ("activecode", "actex") and auto_grade != "unittest"
-    ):  # No unit tests for this question
-        if autograde and autograde not in ("manual", "interact"):
+    if question_type in ("activecode", "actex"):
+        if auto_grade != "unittest":
             autograde = "manual"
             which_to_grade = ""
     try:
@@ -2120,11 +2101,6 @@ def add__or_update_assignment_question():
                     question_type
                 ],
                 status="success",
-                question_id=question_name,
-                points=points,
-                autograde=autograde,
-                which_to_grade=which_to_grade,
-                assign_type=request.vars.assign_type,
             )
         )
     except Exception as ex:
@@ -2349,14 +2325,9 @@ def update_course():
             except ValueError:
                 logger.error("Bad Date in update_course {}".format(new_date))
                 return json.dumps(dict(status="failed"))
-        if "allow_pairs" in request.vars:
+        elif "new_pair" in request.vars:
             db(db.courses.id == thecourse.id).update(
-                allow_pairs=(request.vars["allow_pairs"] == "true")
-            )
-        if "downloads_enabled" in request.vars:
-            print("DOWNLOADS = ", request.vars.enable_downloads)
-            db(db.courses.id == thecourse.id).update(
-                downloads_enabled=(request.vars["downloads_enabled"] == "true")
+                allow_pairs=request.vars["new_pair"]
             )
 
         return json.dumps(dict(status="success"))

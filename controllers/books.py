@@ -49,7 +49,6 @@ def _route_book(is_published=True):
     # See `caching selects <http://web2py.com/books/default/chapter/29/06/the-database-abstraction-layer#Caching-selects>`_.
     cache_kwargs = dict(cache=(cache.ram, 3600), cacheable=True)
     allow_pairs = "false"
-    downloads_enabled = "false"
     # Find the course to access.
     if auth.user:
         # Given a logged-in user, use ``auth.user.course_id``.
@@ -59,7 +58,6 @@ def _route_book(is_published=True):
                 db.courses.course_name,
                 db.courses.base_course,
                 db.courses.allow_pairs,
-                db.courses.downloads_enabled,
                 **cache_kwargs
             )
             .first()
@@ -74,7 +72,7 @@ def _route_book(is_published=True):
             redirect(URL(c="default", f="courses"))
 
         allow_pairs = "true" if course.allow_pairs else "false"
-        downloads_enabled = "true" if course.downloads_enabled else "false"
+
         # Ensure the user has access to this book.
         if (
             is_published
@@ -96,8 +94,6 @@ def _route_book(is_published=True):
                 db.courses.course_name,
                 db.courses.base_course,
                 db.courses.login_required,
-                db.courses.allow_pairs,
-                db.courses.downloads_enabled,
                 **cache_kwargs
             )
             .first()
@@ -216,7 +212,6 @@ def _route_book(is_published=True):
         allow_pairs=allow_pairs,
         readings=XML(reading_list),
         activity_info=json.dumps(div_counts),
-        downloads_enabled=downloads_enabled,
         subchapter_list=_subchaptoc(base_course, chapter),
     )
 
