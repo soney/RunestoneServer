@@ -13,7 +13,6 @@ from feedback import is_server_feedback, fitb_feedback, lp_feedback
 logger = logging.getLogger(settings.logger)
 logger.setLevel(settings.log_level)
 
-response.headers["Access-Control-Allow-Origin"] = "*"
 
 EVENT_TABLE = {
     "mChoice": "mchoice_answers",
@@ -28,6 +27,15 @@ EVENT_TABLE = {
     "dragndrop": "dragndrop_answers",
     "clickablearea": "clickablearea_answers",
     "parsonsprob": "parsons_answers",
+}
+
+COMMENT_MAP = {
+    "sql": "--",
+    "python": "#",
+    "java": "//",
+    "javascript": "//",
+    "c": "//",
+    "cpp": "//",
 }
 
 
@@ -45,14 +53,23 @@ def compareAndUpdateCookieData(sid: str):
 def hsblog():
     setCookie = False
     if auth.user:
+        if request.vars.course != auth.user.course_name:
+            return json.dumps(
+                dict(
+                    log=False,
+                    message="You appear to have changed courses in another tab.  Please switch to this course",
+                )
+            )
         sid = auth.user.username
         compareAndUpdateCookieData(sid)
-        setCookie = (
-            True
-        )  # we set our own cookie anyway to eliminate many of the extraneous anonymous
+        setCookie = True  # we set our own cookie anyway to eliminate many of the extraneous anonymous
         # log entries that come from auth timing out even but the user hasn't reloaded
         # the page.
     else:
+        if request.vars.clientLoginStatus == "true":
+            logger.error("Session Expired")
+            return json.dumps(dict(log=False, message="Session Expired"))
+
         if "ipuser" in request.cookies:
             sid = request.cookies["ipuser"].value
             setCookie = True
@@ -127,11 +144,6 @@ def hsblog():
 
     # Process this event.
     if event == "mChoice" and auth.user:
-        # # has user already submitted a correct answer for this question?
-        # if db((db.mchoice_answers.sid == sid) &
-        #       (db.mchoice_answers.div_id == div_id) &
-        #       (db.mchoice_answers.course_name == auth.user.course_name) &
-        #       (db.mchoice_answers.correct == 'T')).count() == 0:
         answer = request.vars.answer
         correct = request.vars.correct
         db.mchoice_answers.insert(
@@ -162,10 +174,6 @@ def hsblog():
         )
 
     elif event == "dragNdrop" and auth.user:
-        # if db((db.dragndrop_answers.sid == sid) &
-        #       (db.dragndrop_answers.div_id == div_id) &
-        #       (db.dragndrop_answers.course_name == auth.user.course_name) &
-        #       (db.dragndrop_answers.correct == 'T')).count() == 0:
         answers = request.vars.answer
         minHeight = request.vars.minHeight
         correct = request.vars.correct
@@ -180,10 +188,6 @@ def hsblog():
             minHeight=minHeight,
         )
     elif event == "clickableArea" and auth.user:
-        # if db((db.clickablearea_answers.sid == sid) &
-        #       (db.clickablearea_answers.div_id == div_id) &
-        #       (db.clickablearea_answers.course_name == auth.user.course_name) &
-        #       (db.clickablearea_answers.correct == 'T')).count() == 0:
         correct = request.vars.correct
         db.clickablearea_answers.insert(
             sid=sid,
@@ -195,10 +199,6 @@ def hsblog():
         )
 
     elif event == "parsons" and auth.user:
-        # if db((db.parsons_answers.sid == sid) &
-        #       (db.parsons_answers.div_id == div_id) &
-        #       (db.parsons_answers.course_name == auth.user.course_name) &
-        #       (db.parsons_answers.correct == 'T')).count() == 0:
         correct = request.vars.correct
         answer = request.vars.answer
         source = request.vars.source
@@ -213,10 +213,6 @@ def hsblog():
         )
 
     elif event == "codelensq" and auth.user:
-        # if db((db.codelens_answers.sid == sid) &
-        #       (db.codelens_answers.div_id == div_id) &
-        #       (db.codelens_answers.course_name == auth.user.course_name) &
-        #       (db.codelens_answers.correct == 'T')).count() == 0:
         correct = request.vars.correct
         answer = request.vars.answer
         source = request.vars.source
@@ -282,6 +278,11 @@ def hsblog():
         response.cookies["ipuser"] = sid
         response.cookies["ipuser"]["expires"] = 24 * 3600 * 90
         response.cookies["ipuser"]["path"] = "/"
+        if auth.user:
+            response.cookies["last_course"] = auth.user.course_name
+            response.cookies["last_course"]["expires"] = 24 * 3600 * 90
+            response.cookies["last_course"]["path"] = "/"
+
     return json.dumps(res)
 
 
@@ -289,9 +290,21 @@ def runlog():  # Log errors and runs with code
     # response.headers['content-type'] = 'application/json'
     setCookie = False
     if auth.user:
+        if request.vars.course != auth.user.course_name:
+            return json.dumps(
+                dict(
+                    log=False,
+                    message="You appear to have changed courses in another tab.  Please switch to this course",
+                )
+            )
         sid = auth.user.username
         setCookie = True
+        print(sid)
     else:
+        print(request.vars.clientLoginStatus)
+        if request.vars.clientLoginStatus == "true":
+            logger.error("Session Expired")
+            return json.dumps(dict(log=False, message="Session Expired"))
         if "ipuser" in request.cookies:
             sid = request.cookies["ipuser"].value
             setCookie = True
@@ -363,7 +376,9 @@ def runlog():  # Log errors and runs with code
         ):
             num_tries = 3
             done = False
-            dbcourse = db(db.courses.course_name == course).select().first()
+            dbcourse = (
+                db(db.courses.course_name == course).select(**SELECT_CACHE).first()
+            )
             while num_tries > 0 and not done:
                 try:
                     db.code.insert(
@@ -377,15 +392,7 @@ def runlog():  # Log errors and runs with code
                     )
                     if request.vars.partner:
                         if _same_class(sid, request.vars.partner):
-                            comment_map = {
-                                "sql": "--",
-                                "python": "#",
-                                "java": "//",
-                                "javascript": "//",
-                                "c": "//",
-                                "cpp": "//",
-                            }
-                            comchar = comment_map.get(request.vars.lang, "#")
+                            comchar = COMMENT_MAP.get(request.vars.lang, "#")
                             newcode = (
                                 "{} This code was shared by {}\n\n".format(comchar, sid)
                                 + code
@@ -667,7 +674,9 @@ def updatelastpage():
             and practice_settings.select().first().flashcard_creation_method == 0
         ):
             # Since each authenticated user has only one active course, we retrieve the course this way.
-            course = db(db.courses.id == auth.user.course_id).select().first()
+            course = (
+                db(db.courses.id == auth.user.course_id).select(**SELECT_CACHE).first()
+            )
 
             # We only retrieve questions to be used in flashcards if they are marked for practice purpose.
             questions = _get_qualified_questions(
@@ -782,7 +791,7 @@ def getAllCompletionStatus():
 @auth.requires_login()
 def getlastpage():
     course = request.vars.course
-    course = db(db.courses.course_name == course).select().first()
+    course = db(db.courses.course_name == course).select(**SELECT_CACHE).first()
 
     result = db(
         (db.user_state.user_id == auth.user.id)
@@ -828,7 +837,11 @@ def _getCorrectStats(miscdata, event):
             sid = request.cookies["ipuser"].value
 
     if sid:
-        course = db(db.courses.course_name == miscdata["course"]).select().first()
+        course = (
+            db(db.courses.course_name == miscdata["course"])
+            .select(**SELECT_CACHE)
+            .first()
+        )
         tbl = db[dbtable]
 
         count_expr = tbl.correct.count()
@@ -911,7 +924,14 @@ def getaggregateresults():
 
     is_instructor = verifyInstructorStatus(course, auth.user.id)  # noqa: F405
     # Yes, these two things could be done as a join.  but this **may** be better for performance
-    if course == "thinkcspy" or course == "pythonds":
+    if course in (
+        "thinkcspy",
+        "pythonds",
+        "fopp",
+        "csawesome",
+        "apcsareview",
+        "StudentCSP",
+    ):
         start_date = datetime.datetime.utcnow() - datetime.timedelta(days=90)
     else:
         start_date = (
@@ -1034,7 +1054,7 @@ def gettop10Answers():
     rows = []
 
     try:
-        dbcourse = db(db.courses.course_name == course).select().first()
+        dbcourse = db(db.courses.course_name == course).select(**SELECT_CACHE).first()
         count_expr = db.fitb_answers.answer.count()
         rows = db(
             (db.fitb_answers.div_id == question)
@@ -1341,7 +1361,7 @@ def checkTimedReset():
         .select(orderby=~db.timed_exam.id)
         .first()
     )
-
+    # TODO:  check the logic here if its already been reset it shouldn't be again?
     if rows:  # If there was a scored exam
         if rows.reset == True:  # noqa: E712
             return json.dumps({"canReset": True})
@@ -1367,7 +1387,7 @@ def preview_question():
         # Note that ``os.environ`` isn't a dict, it's an object whose setter modifies environment variables. So, modifications of a copy/deepcopy still `modify the original environment <https://stackoverflow.com/questions/13142972/using-copy-deepcopy-on-os-environ-in-python-appears-broken>`_. Therefore, convert it to a dict, where modifications will not affect the environment.
         env = dict(os.environ)
         # Prevent any changes to the database when building a preview question.
-        del env["DBURL"]
+        env.pop("DBURL", None)
         # Run a runestone build.
         # We would like to use sys.executable But when we run web2py
         # in uwsgi then sys.executable is uwsgi which doesn't work.
@@ -1436,7 +1456,7 @@ def get_datafile():
     acid -  the acid of this datafile
     """
     course = request.vars.course_id  # the course name
-    the_course = db(db.courses.course_name == course).select().first()
+    the_course = db(db.courses.course_name == course).select(**SELECT_CACHE).first()
     acid = request.vars.acid
     file_contents = (
         db(
@@ -1467,12 +1487,22 @@ def broadcast_code():
     Callable by an instructor to send the code in their scratch activecode
     to all students in the class.
     """
-    the_course = db(db.courses.course_name == auth.user.course_name).select().first()
+    the_course = (
+        db(db.courses.course_name == auth.user.course_name)
+        .select(**SELECT_CACHE)
+        .first()
+    )
     cid = the_course.id
     student_list = db(
         (db.user_courses.course_id == cid)
         & (db.auth_user.id == db.user_courses.user_id)
     ).select()
+    shared_code = (
+        "{} Instructor shared code on {}\n".format(
+            COMMENT_MAP.get(request.vars.lang, "#"), datetime.datetime.utcnow().date()
+        )
+        + request.vars.code
+    )
     counter = 0
     for student in student_list:
         if student.auth_user.id == auth.user.id:
@@ -1482,7 +1512,7 @@ def broadcast_code():
             db.code.insert(
                 sid=sid,
                 acid=request.vars.divid,
-                code=request.vars.code,
+                code=shared_code,
                 emessage="",
                 timestamp=datetime.datetime.utcnow(),
                 course_id=cid,
@@ -1507,3 +1537,10 @@ def _same_class(user1: str, user2: str) -> bool:
     )
 
     return user1_course == user2_course
+
+
+def login_status():
+    if auth.user:
+        return json.dumps(dict(status="loggedin", course_name=auth.user.course_name))
+    else:
+        return json.dumps(dict(status="loggedout", course_name=auth.user.course_name))

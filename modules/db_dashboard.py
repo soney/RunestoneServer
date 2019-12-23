@@ -7,37 +7,34 @@ from gluon import current, URL, redirect
 rslogger = logging.getLogger(current.settings.logger)
 rslogger.setLevel(current.settings.log_level)
 
-# current.db.define_table('dash_problem_answers',
-#  Field('timestamp','datetime'),
-#  Field('sid','string'),
-#  Field('event','string'),
-#  Field('act','string'),
-#  Field('div_id','string'),
-#  Field('course_id','string'),
-#  migrate=table_migrate_prefix + 'useinfo.table'
-# )
-
-
-# current.db.define_table('dash_problem_user_metrics',
-#  Field('timestamp','datetime'),
-#  Field('sid','string'),
-#  Field('event','string'),
-#  Field('act','string'),
-#  Field('div_id','string'),
-#  Field('course_id','string'),
-#  migrate=table_migrate_prefix + 'useinfo.table'
-# )
-
-# it would be good at some point to save these to a table and
-# periodicly update them with new log entries instead of having
-# to regenerate the entire collection of metrics everytime.
+UNGRADED_EVENTS = [
+    "activecode",
+    "codelens",
+    "showeval",
+    "shortanswer",
+    "parsonsMove",
+    "timedExam",
+    "livecode",
+    "video",
+    "poll",
+    "Audio",
+    "tie",
+    "coach",
+    "page",
+]
 
 
 class ProblemMetrics(object):
+    """
+    Used to display the donut charts.
+
+    for all users create a UserReponse
+    """
+
     def __init__(self, course_id, problem_id, users):
         self.course_id = course_id
         self.problem_id = problem_id
-        self.problem_text = IdConverter.problem_id_to_text(problem_id)
+        self.problem_text = problem_id
         # total responses by answer choice, eg. A: 5, B: 3, C: 13
         self.aggregate_responses = {}
         # responses keyed by user
@@ -169,16 +166,44 @@ class CourseProblemMetrics(object):
 
 
 class UserActivityMetrics(object):
-    def __init__(self, course_id, users):
-        self.course_id = course_id
+    def __init__(self, course_name, users):
+        self.course_id = course_name
         self.user_activities = {}
         for user in users:
             self.user_activities[user.username] = UserActivity(user)
 
-    def update_metrics(self, logs):
-        for row in logs:
-            if row.sid in self.user_activities:
-                self.user_activities[row.sid].add_activity(row)
+        # Get summary of logs
+        self.logs = current.db.executesql(
+            """select sid, event, count(*)
+        from useinfo where course_id = '{}'
+        group by sid, event
+        order by sid, event""".format(
+                self.course_id
+            ),
+            as_dict=True,
+        )
+
+        self.recent_logs = current.db.executesql(
+            """select sid, event, count(*)
+        from useinfo where course_id = '{}'
+        and timestamp > now() - interval '7 days'
+        group by sid, event
+        order by sid, event""".format(
+                self.course_id
+            ),
+            as_dict=True,
+        )
+        # read logs here
+
+    def update_metrics(self):
+
+        for row in self.logs:
+            if row["sid"] in self.user_activities:
+                self.user_activities[row["sid"]].add_activity(row)
+
+        for row in self.recent_logs:
+            if row["sid"] in self.user_activities:
+                self.user_activities[row["sid"]].add_recent_activity(row)
 
 
 class UserActivity(object):
@@ -186,29 +211,53 @@ class UserActivity(object):
         self.name = "{0} {1}".format(user.first_name, user.last_name)
         self.username = user.username
         self.rows = []
-        self.page_views = []
-        # self.exercise_correct  -- cannot find any refs to this unset attr.
+        self.page_views = 0
+        self.correct_count = 0
+        self.missed_count = 0
+        self.recent_page_views = 0
+        self.recent_correct = 0
+        self.recent_missed = 0
 
     def add_activity(self, row):
-        self.rows.append(row)
+        # row is a row from useinfo
+        if row["event"] == "page":
+            self.page_views += row["count"]
+        elif row["event"] == "activecode":
+            self.rows.append(row)
+            self.correct_count += row["count"]
+        else:
+            self.missed_count += row["count"]
+
+    def add_recent_activity(self, row):
+        # row is a row from useinfo
+        if row["event"] == "page":
+            self.recent_page_views += row["count"]
+        elif row["event"] == "activecode":
+            self.recent_correct += row["count"]
+        else:
+            self.recent_missed += row["count"]
 
     def get_page_views(self):
         # returns page views for all time
-        return len(self.rows)
+        return self.page_views
 
     def get_recent_page_views(self):
-        # returns page views for the last 7 days
-        recentViewCount = 0
-        current = len(self.rows) - 1
-        while current >= 0 and self.rows[current][
-            "timestamp"
-        ] >= datetime.datetime.utcnow() - datetime.timedelta(days=7):
-            recentViewCount += 1
-            current = current - 1
-        return recentViewCount
+        return self.recent_page_views
 
     def get_activity_stats(self):
         return self
+
+    def get_correct_count(self):
+        return self.correct_count
+
+    def get_missed_count(self):
+        return self.missed_count
+
+    def get_recent_correct(self):
+        return self.recent_correct
+
+    def get_recent_missed(self):
+        return self.recent_missed
 
 
 class UserActivityChapterProgress(object):
@@ -283,6 +332,23 @@ class UserActivitySubChapterProgress(object):
 
 
 class ProgressMetrics(object):
+    """
+    Build the progress information for Chapter/Subchapter
+
+    * number of starts
+    * number of completions
+    * number of non-starts
+
+    Used on the index page of the dashboard for a particular chapter
+    TODO: Replace most of this with a single aggregation query:
+    select user_sub_chapter_progress.sub_chapter_id, status, count(status)
+    from auth_user join user_sub_chapter_progress ON user_sub_chapter_progress.user_id = http://auth_user.id
+    where chapter_id = 'SimplePythonData' and course_name = 'ac_summit_2019'
+    group by user_sub_chapter_progress.sub_chapter_id, status
+    order by user_sub_chapter_progress.sub_chapter_id;
+
+    """
+
     def __init__(self, course_id, sub_chapters, users):
         self.sub_chapters = OrderedDict()
         for sub_chapter in sub_chapters:
@@ -291,7 +357,7 @@ class ProgressMetrics(object):
                 sub_chapter, len(users)
             )
 
-    def update_metrics(self, logs, chapter_progress):
+    def update_metrics(self, chapter_progress):
         for row in chapter_progress:
             try:
                 self.sub_chapters[
@@ -335,46 +401,6 @@ class SubChapterActivity(object):
         return "{0:.2f}%".format(float(self.completed) / self.total_users * 100)
 
 
-class UserLogCategorizer(object):
-    def __init__(self, logs):
-        self.activities = []
-        for log in logs:
-            self.activities.append(
-                {
-                    "time": log.timestamp,
-                    "event": UserLogCategorizer.format_event(
-                        log.event, log.act, log.div_id
-                    ),
-                }
-            )
-
-    @staticmethod
-    def format_event(event, action, div_id):
-        short_div_id = div_id
-        if len(div_id) > 25:
-            short_div_id = "...{0}".format(div_id[-25:])
-        if (event == "page") & (action == "view"):
-            return "{0} {1}".format("Viewed", short_div_id)
-        elif (event == "timedExam") & (action == "start"):
-            return "{0} {1}".format("Started Timed Exam", div_id)
-        elif (event == "timedExam") & (action == "finish"):
-            return "{0} {1}".format("Finished Timed Exam", div_id)
-        elif event == "highlight":
-            return "{0} {1}".format("Highlighted", short_div_id)
-        elif (event == "activecode") & (action == "run"):
-            return "{0} {1}".format("Ran Activecode", div_id)
-        elif (event == "parsons") & (action == "yes"):
-            return "{0} {1}".format("Solved Parsons", div_id)
-        elif (event == "parsons") & (action != "yes"):
-            return "{0} {1}".format("Attempted Parsons", div_id)
-        elif (event == "mChoice") | (event == "fillb"):
-            answer = action.split(":")
-            if action.count(":") == 2 and answer[2] == "correct":
-                return "{0} {1}".format("Solved", div_id)
-            return "{0} {1}".format("Attempted", div_id)
-        return "{0} {1}".format(event, div_id)
-
-
 class DashboardDataAnalyzer(object):
     def __init__(self, course_id, chapter=None):
         self.course_id = course_id
@@ -383,19 +409,10 @@ class DashboardDataAnalyzer(object):
         else:
             self.db_chapter = None
 
-    def load_chapter_metrics(self, chapter):
-        if not chapter:
-            rslogger.error("chapter not set, abort!")
-            current.session.flash = "Error No Course Data in DB"
-            return
-
-        self.db_chapter = chapter
-        # go get all the course data... in the future the post processing
-        # should probably be stored and only new data appended.
         self.course = (
             current.db(current.db.courses.id == self.course_id).select().first()
         )
-        rslogger.debug("COURSE QUERY GOT %s", self.course)
+
         self.users = current.db(
             (current.db.auth_user.course_id == current.auth.user.course_id)
             & (current.db.auth_user.active == "T")
@@ -408,19 +425,19 @@ class DashboardDataAnalyzer(object):
         self.instructors = current.db(
             (current.db.course_instructor.course == current.auth.user.course_id)
         ).select(current.db.course_instructor.instructor)
-        inums = [x.instructor for x in self.instructors]
-        self.users.exclude(lambda x: x.id in inums)
-        self.logs = current.db(
-            (current.db.useinfo.course_id == self.course.course_name)
-            & (current.db.useinfo.timestamp >= self.course.term_start_date)
-        ).select(
-            current.db.useinfo.timestamp,
-            current.db.useinfo.sid,
-            current.db.useinfo.event,
-            current.db.useinfo.act,
-            current.db.useinfo.div_id,
-            orderby=current.db.useinfo.timestamp,
-        )
+        self.inums = [x.instructor for x in self.instructors]
+        self.users.exclude(lambda x: x.id in self.inums)
+
+    def load_chapter_metrics(self, chapter):
+        if not chapter:
+            rslogger.error("chapter not set, abort!")
+            current.session.flash = "Error No Course Data in DB"
+            return
+
+        self.db_chapter = chapter
+        # go get all the course data... in the future the post processing
+        # should probably be stored and only new data appended.
+        rslogger.debug("COURSE QUERY GOT %s", self.course)
         # todo:  Yikes!  Loading all of the log data for a large or even medium class is a LOT
         self.db_chapter_progress = current.db(
             (current.db.user_sub_chapter_progress.user_id == current.db.auth_user.id)
@@ -435,19 +452,22 @@ class DashboardDataAnalyzer(object):
             current.db.user_sub_chapter_progress.status,
             current.db.auth_user.id,
         )
-        self.db_chapter_progress.exclude(lambda x: x.auth_user.id in inums)
+        self.db_chapter_progress.exclude(lambda x: x.auth_user.id in self.inums)
         self.db_sub_chapters = current.db(
             (current.db.sub_chapters.chapter_id == chapter.id)
         ).select(current.db.sub_chapters.ALL, orderby=current.db.sub_chapters.id)
         self.problem_metrics = CourseProblemMetrics(self.course_id, self.users, chapter)
         rslogger.debug("About to call update_metrics")
         self.problem_metrics.update_metrics(self.course.course_name)
-        self.user_activity = UserActivityMetrics(self.course_id, self.users)
-        self.user_activity.update_metrics(self.logs)
+
+        self.user_activity = UserActivityMetrics(self.course.course_name, self.users)
+        self.user_activity.update_metrics()
+
         self.progress_metrics = ProgressMetrics(
             self.course_id, self.db_sub_chapters, self.users
         )
-        self.progress_metrics.update_metrics(self.logs, self.db_chapter_progress)
+        self.progress_metrics.update_metrics(self.db_chapter_progress)
+
         self.questions = {}
         for i in self.problem_metrics.problems.keys():
             self.questions[i] = (
@@ -461,9 +481,7 @@ class DashboardDataAnalyzer(object):
 
     def load_user_metrics(self, username):
         self.username = username
-        self.course = (
-            current.db(current.db.courses.id == self.course_id).select().first()
-        )
+
         if not self.course:
             rslogger.debug("ERROR - NO COURSE course_id = {}".format(self.course_id))
 
@@ -497,18 +515,6 @@ class DashboardDataAnalyzer(object):
             redirect(URL("default", "courses"))
             # TODO: calling redirect here is kind of a hacky way to handle this.
 
-        self.logs = current.db(
-            (current.db.useinfo.course_id == self.course.course_name)
-            & (current.db.useinfo.sid == username)
-            & (current.db.useinfo.timestamp >= self.course.term_start_date)
-        ).select(
-            current.db.useinfo.timestamp,
-            current.db.useinfo.sid,
-            current.db.useinfo.event,
-            current.db.useinfo.act,
-            current.db.useinfo.div_id,
-            orderby=~current.db.useinfo.timestamp,
-        )
         self.db_chapter_progress = current.db(
             (current.db.user_sub_chapter_progress.user_id == self.user.id)
         ).select(
@@ -516,33 +522,22 @@ class DashboardDataAnalyzer(object):
             current.db.user_sub_chapter_progress.sub_chapter_id,
             current.db.user_sub_chapter_progress.status,
         )
-        self.formatted_activity = UserLogCategorizer(self.logs)
+        self.formatted_activity = self.load_recent_activity()
         self.chapter_progress = UserActivityChapterProgress(
             self.chapters, self.db_chapter_progress
         )
 
+    def load_recent_activity(self):
+        week_ago = datetime.datetime.utcnow() - datetime.timedelta(days=7)
+        res = current.db(
+            (current.db.useinfo.sid == self.user.username)
+            & (current.db.useinfo.course_id == self.course.course_name)
+            & (current.db.useinfo.timestamp > week_ago)
+        ).select(orderby=~current.db.useinfo.timestamp)
+
+        return res
+
     def load_exercise_metrics(self, exercise):
-        self.course = (
-            current.db(current.db.courses.id == self.course_id).select().first()
-        )
-        self.users = current.db(
-            current.db.auth_user.course_id == current.auth.user.course_id
-        ).select(
-            current.db.auth_user.username,
-            current.db.auth_user.first_name,
-            current.db.auth_user.last_name,
-        )
-        self.logs = current.db(
-            (current.db.useinfo.course_id == self.course.course_name)
-            & (current.db.useinfo.timestamp >= self.course.term_start_date)
-        ).select(
-            current.db.useinfo.timestamp,
-            current.db.useinfo.sid,
-            current.db.useinfo.event,
-            current.db.useinfo.act,
-            current.db.useinfo.div_id,
-            orderby=current.db.useinfo.timestamp,
-        )
         self.problem_metrics = CourseProblemMetrics(
             self.course_id, self.users, self.db_chapter
         )
@@ -624,34 +619,3 @@ class DashboardDataAnalyzer(object):
                     "class_average": "N/A",
                     "due_date": assign["duedate"].date().strftime("%m-%d-%Y"),
                 }
-
-
-# This whole object is a workaround because these strings
-# are not generated and stored in the db. This needs automating
-# to support all books.
-# TODO:  more user friendly naming for problems.
-# The idea here is to provide a more user friendly name for each question beyond its divid This
-# name appears on the donut charts and in the details....
-# We are most of the way there in the questions table.  But we really don't have a more friendly
-# way to identify it.  We could use its chapter-subchapter-position...
-class IdConverter(object):
-    problem_id_map = {
-        "pre_1": "Pretest-1: What will be the values in x, y, and z after the following lines of code execute?",
-        "pre_2": "Pretest-2: What is the output from the program below?",
-        "1_3_1_BMI_Q1": "1-3-1: Imagine that you are 5 foot 7 inches and weighed 140 pounds. What is your BMI?",
-        "1_4_1_String_Methods_Q1": "1-4-1: What would the following code print?",
-        "1_5_1_Turtle_Q1": "1-5-1: Which direction will alex move when the code below executes?",
-        "": "1-5-2: ",
-        "1_6_1_Image_Q1": "1-6-1: Which way does y increase on an image?",
-        "3_2_1_Mult_fill": "3-2-1: What will be printed when you click on the Run button in the code below?",
-        "3_2_2_Div_fill": "3-2-2: What will be printed when you click on the Run button in the code below?",
-        "3_2_3_Mod_fill": "3-2-3: What will be printed when you click on the Run button in the code below?",
-        "4_1_2_noSpace": "4-1-2: What will be printed when the following executes?",
-        "4_2_2_Slice2": "4-2-2: What will be printed when the following executes?",
-        "4_3_1_s1": "4-3-1: Given the following code segment, what is the value of the string s1 after these are executed?",
-        "4_3_2_s2": "4-3-2: What is the value of s1 after the following code executes?",
-    }
-
-    @staticmethod
-    def problem_id_to_text(problem_id):
-        return IdConverter.problem_id_map.get(problem_id, problem_id)

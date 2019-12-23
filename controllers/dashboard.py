@@ -6,7 +6,7 @@ from collections import OrderedDict
 import six
 import pandas as pd
 from db_dashboard import DashboardDataAnalyzer
-
+from rs_practice import _get_practice_data
 
 logger = logging.getLogger(settings.logger)
 logger.setLevel(settings.log_level)
@@ -93,6 +93,8 @@ def index():
             "JavaReview",
             "JavaReview-RU",
             "StudentCSP",
+            "csawesome",
+            "fopp",
         ]:
             session.flash = "Student Progress page not available for {}".format(
                 auth.user.course_name
@@ -189,16 +191,36 @@ def index():
         )
 
     read_data = []
+    correct_data = []
+    missed_data = []
     recent_data = []
+    recent_correct = []
+    recent_missed = []
     logger.debug("getting user activity")
     user_activity = data_analyzer.user_activity
 
+    # All of this can be replaced by a nice crosstab call
+    # See UserActivityCrosstab.ipynb
     for user, activity in six.iteritems(user_activity.user_activities):
         read_data.append(
             {
                 "student": activity.name,  # causes username instead of full name to show in the report, but it works  ?? how to display the name but use the username on click??
                 "sid": activity.username,
                 "count": activity.get_page_views(),
+            }
+        )
+        correct_data.append(
+            {
+                "student": activity.name,  # causes username instead of full name to show in the report, but it works  ?? how to display the name but use the username on click??
+                "sid": activity.username,
+                "count": activity.get_correct_count(),
+            }
+        )
+        missed_data.append(
+            {
+                "student": activity.name,  # causes username instead of full name to show in the report, but it works  ?? how to display the name but use the username on click??
+                "sid": activity.username,
+                "count": activity.get_missed_count(),
             }
         )
 
@@ -210,17 +232,33 @@ def index():
             }
         )
 
+        recent_correct.append(
+            {
+                "student": activity.name,
+                "sid": activity.username,
+                "count": activity.get_recent_correct(),
+            }
+        )
+        recent_missed.append(
+            {
+                "student": activity.name,
+                "sid": activity.username,
+                "count": activity.get_recent_missed(),
+            }
+        )
+
     logger.debug("finishing")
+    # TODO -- this is not right and explains why all are the same!!
     studentactivity = [
         {"data": read_data, "name": "Sections Read"},
-        {"data": read_data, "name": "Exercises Correct"},
-        {"data": read_data, "name": "Exercises Missed"},
+        {"data": correct_data, "name": "Exercises Correct"},
+        {"data": missed_data, "name": "Exercises Missed"},
     ]
 
     recentactivity = [
         {"data": recent_data, "name": "Sections Read"},
-        {"data": recent_data, "name": "Exercises Correct"},
-        {"data": recent_data, "name": "Exercises Missed"},
+        {"data": recent_correct, "name": "Exercises Correct"},
+        {"data": recent_missed, "name": "Exercises Missed"},
     ]
 
     return dict(
@@ -238,10 +276,15 @@ def index():
 @auth.requires_login()
 def studentreport():
     data_analyzer = DashboardDataAnalyzer(auth.user.course_id)
-    # todo: Test to see if vars.id is there -- if its not then load_user_metrics will crash
-    # todo: This seems redundant with assignments/index  -- should use this one... id should be text sid
-    data_analyzer.load_user_metrics(request.vars.id)
-    data_analyzer.load_assignment_metrics(request.vars.id)
+    for_dashboard = verifyInstructorStatus(auth.user.course_id, auth.user.id)
+    if "id" in request.vars and for_dashboard:
+        sid = request.vars.id
+    else:
+        sid = auth.user.username
+        response.view = "assignments/index.html"
+
+    data_analyzer.load_user_metrics(sid)
+    data_analyzer.load_assignment_metrics(sid)
 
     chapters = []
     for chapter_label, chapter in six.iteritems(
@@ -254,15 +297,51 @@ def studentreport():
                 "subchapters": chapter.get_sub_chapter_progress(),
             }
         )
-    activity = data_analyzer.formatted_activity.activities
+    activity = data_analyzer.formatted_activity
 
     logger.debug("GRADES = %s", data_analyzer.grades)
+
+    pd = dict()
+    if response.view == "assignments/index.html":
+        (
+            pd["now"],
+            pd["now_local"],
+            pd["practice_message1"],
+            pd["practice_message2"],
+            pd["practice_graded"],
+            pd["spacing"],
+            pd["interleaving"],
+            pd["practice_completion_count"],
+            pd["remaining_days"],
+            pd["max_days"],
+            pd["max_questions"],
+            pd["day_points"],
+            pd["question_points"],
+            pd["presentable_flashcards"],
+            pd["flashcard_count"],
+            pd["practiced_today_count"],
+            pd["questions_to_complete_day"],
+            pd["practice_today_left"],
+            pd["points_received"],
+            pd["total_possible_points"],
+            pd["flashcard_creation_method"],
+        ) = _get_practice_data(
+            auth.user,
+            float(session.timezoneoffset) if "timezoneoffset" in session else 0,
+            db,
+        )
+        pd["total_today_count"] = min(
+            pd["practice_today_left"] + pd["practiced_today_count"],
+            pd["questions_to_complete_day"],
+        )
+
     return dict(
         course=get_course_row(db.courses.ALL),
         user=data_analyzer.user,
         chapters=chapters,
         activity=activity,
         assignments=data_analyzer.grades,
+        **pd
     )
 
 
@@ -541,13 +620,18 @@ def subchapoverview():
     data = pd.read_sql_query(
         """
     select sid, useinfo.timestamp, div_id, chapter, subchapter from useinfo
-    join questions on div_id = name
-    where course_id = '{}'""".format(
+    join questions on div_id = name join auth_user on username = useinfo.sid
+    where useinfo.course_id = '{}' and active='T'""".format(
             course
         ),
         settings.database_uri,
+        parse_dates=["timestamp"],
     )
     data = data[~data.sid.str.contains("@")]
+    tdoff = pd.Timedelta(
+        hours=float(session.timezoneoffset) if "timezoneoffset" in session else 0
+    )
+    data["timestamp"] = data.timestamp.map(lambda x: x - tdoff)
     if "tablekind" not in request.vars:
         request.vars.tablekind = "sccount"
 
@@ -596,6 +680,27 @@ def subchapoverview():
         how="outer",
     )
     mtbl = mtbl.set_index(["chapter_num", "sub_chapter_num"]).sort_index()
+    mtbl = mtbl.reset_index()
+
+    def to_int(x):
+        try:
+            res = int(x)
+            return res
+        except ValueError:
+            return ""
+
+    mtbl["chapter_label"] = mtbl.apply(
+        lambda row: "{}.{} {}/{}".format(
+            to_int(row.chapter_num),
+            to_int(row.sub_chapter_num),
+            row.chapter_label,
+            row.sub_chapter_label,
+        ),
+        axis=1,
+    )
+    neworder = mtbl.columns.to_list()
+    neworder = neworder[-2:-1] + neworder[2:-2]
+    mtbl = mtbl[neworder]
 
     if request.vars.action == "tocsv":
         response.headers["Content-Type"] = "application/vnd.ms-excel"
@@ -608,9 +713,5 @@ def subchapoverview():
             course_name=auth.user.course_name,
             course_id=auth.user.course_name,
             course=thecourse,
-            summary=mtbl.to_html(
-                classes="table table-striped table-bordered table-lg",
-                na_rep=" ",
-                table_id="scsummary",
-            ).replace("NaT", ""),
+            summary=mtbl.to_json(orient="records", date_format="iso"),
         )

@@ -5,6 +5,7 @@ import requests
 from six.moves.urllib.parse import unquote
 from six.moves.urllib.error import HTTPError
 import logging
+import subprocess
 
 from gluon.restricted import RestrictedError
 from stripe_form import StripeForm
@@ -250,6 +251,7 @@ def index():
             else:
                 session.request_donation = True
             db.user_courses.insert(user_id=auth.user.id, course_id=auth.user.course_id)
+            db(db.auth_user.id == auth.user.id).update(active="T")
         try:
             logger.debug("INDEX - checking for progress table")
             chapter_label = (
@@ -624,21 +626,11 @@ def delete():
         )
         session.flash = "Account Deleted"
         db(db.auth_user.id == auth.user.id).delete()
-        db(db.useinfo.sid == auth.user.username).delete()
-        db(db.code.sid == auth.user.username).delete()
-        db(db.acerror_log.sid == auth.user.username).delete()
-        for t in [
-            "clickablearea",
-            "codelens",
-            "dragndrop",
-            "fitb",
-            "lp",
-            "mchoice",
-            "parsons",
-            "shortanswer",
-        ]:
-            db(db["{}_answers".format(t)].sid == auth.user.username).delete()
-
+        subprocess.call(
+            "rsmanage rmuser --username {} &".format(auth.user.username),
+            shell=True,
+            close_fds=True,
+        )
         auth.logout()  # logout user and redirect to home page
     else:
         redirect(URL("default", "user/profile"))

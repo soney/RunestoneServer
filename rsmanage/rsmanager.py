@@ -534,6 +534,7 @@ def inituser(
 @pass_config
 def resetpw(config, username, password):
     """Utility to change a users password. Useful If they can't do it through the normal mechanism"""
+    os.chdir(findProjectRoot())
     userinfo = {}
     userinfo["username"] = username or click.prompt("Username")
     userinfo["password"] = password or click.prompt("Password", hide_input=True)
@@ -559,6 +560,32 @@ def resetpw(config, username, password):
         exit(1)
     else:
         click.echo("Success")
+
+
+@cli.command()
+@click.option("--username", help="Username, must be unique")
+@pass_config
+def rmuser(config, username):
+    """Utility to change a users password. Useful If they can't do it through the normal mechanism"""
+    os.chdir(findProjectRoot())
+    sid = username or click.prompt("Username")
+
+    eng = create_engine(config.dburl)
+    eng.execute("delete from auth_user where username = %s", sid)
+    eng.execute("delete from useinfo where sid = %s", sid)
+    eng.execute("delete from code where sid = %s", sid)
+    eng.execute("delete from acerror_log where sid = %s", sid)
+    for t in [
+        "clickablearea",
+        "codelens",
+        "dragndrop",
+        "fitb",
+        "lp",
+        "mchoice",
+        "parsons",
+        "shortanswer",
+    ]:
+        eng.execute("delete from {}_answers where sid = '{}'".format(t, sid))
 
 
 @cli.command()

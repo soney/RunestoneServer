@@ -9,6 +9,7 @@ from gluon.storage import Storage
 import logging
 from os import environ
 import sys
+import time
 
 settings = Storage()
 
@@ -21,7 +22,6 @@ settings.author_email = "info@interactivepython.org"
 settings.keywords = ""
 settings.description = ""
 settings.layout_theme = "Default"
-settings.security_key = "0b734ebc-7a50-4167-99b1-2df09062fde8"
 settings.email_server = "smtp.webfaction.com"
 settings.email_sender = "info@interactivepython.org"
 settings.email_login = "sendmail_bnmnetp@web407.webfaction.com:password"
@@ -42,14 +42,17 @@ if config == "production":
     # Set these
     settings.STRIPE_PUBLISHABLE_KEY = environ.get("STRIPE_PUBLISHABLE_KEY")
     settings.STRIPE_SECRET_KEY = environ.get("STRIPE_SECRET_KEY")
+    settings.components_version = "4.1.12"
 elif config == "development":
     settings.database_uri = environ.get("DEV_DBURL")
     settings.STRIPE_PUBLISHABLE_KEY = environ.get("STRIPE_DEV_PUBLISHABLE_KEY")
     settings.STRIPE_SECRET_KEY = environ.get("STRIPE_DEV_SECRET_KEY")
+    settings.components_version = "4.1.12"  # str(int(time.time()))
 elif config == "test":
     settings.database_uri = environ.get("TEST_DBURL")
     settings.STRIPE_PUBLISHABLE_KEY = environ.get("STRIPE_TEST_PUBLISHABLE_KEY")
     settings.STRIPE_SECRET_KEY = environ.get("STRIPE_TEST_SECRET_KEY")
+    settings.components_version = str(int(time.time()))
 else:
     print("To configure web2py you should set up both WEB2PY_CONFIG and")
     print("XXX_DBURL values in your environment -- See README for more detail")

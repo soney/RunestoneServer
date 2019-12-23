@@ -46,6 +46,9 @@ import six
 from six.moves.urllib.error import HTTPError, URLError
 from six.moves.urllib.request import urlopen
 
+# Required to allow use of this class on a module-scoped fixture.
+from _pytest.monkeypatch import MonkeyPatch
+
 # Local imports
 # -------------
 from .utils import COVER_DIRS, DictToObject
@@ -76,19 +79,18 @@ def pytest_addoption(parser):
 
 # Output a coverage report when testing is done. See https://docs.pytest.org/en/latest/reference.html#_pytest.hookspec.pytest_terminal_summary.
 def pytest_terminal_summary(terminalreporter):
-    with pushd("../../.."):
-        try:
-            cp = xqt(
-                "{} -m coverage report".format(sys.executable),
-                # Capture the output from the report.
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                universal_newlines=True,
-            )
-        except subprocess.CalledProcessError as e:
-            res = "Error in coverage report.\n{}".format(e.stdout + e.stderr)
-        else:
-            res = cp.stdout + cp.stderr
+    try:
+        cp = xqt(
+            "{} -m coverage report".format(sys.executable),
+            # Capture the output from the report.
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+        )
+    except subprocess.CalledProcessError as e:
+        res = "Error in coverage report.\n{}".format(e.stdout + e.stderr)
+    else:
+        res = cp.stdout + cp.stderr
     terminalreporter.write_line(res)
 
 
@@ -102,21 +104,12 @@ class _object(object):
 # Create a web2py controller environment. This is taken from pieces of ``gluon.shell.run``. It returns a ``dict`` containing the environment.
 def web2py_controller_env(
     # _`application`: The name of the application to run in, as a string.
-    application
+    application,
 ):
 
     env = gluon.shell.env(application, import_models=True)
     env.update(gluon.shell.exec_pythonrc())
     return env
-
-
-# Create a web2py controller environment. Given ``ctl_env = web2py_controller('app_name')``, then  ``ctl_env.db`` refers to the usual DAL object for database access, ``ctl_env.request`` is an (empty) Request object, etc.
-def web2py_controller(
-    # See env_.
-    env
-):
-
-    return DictToObject(env)
 
 
 # Fixtures
@@ -167,6 +160,7 @@ def web2py_server(runestone_name, web2py_server_address, pytestconfig):
     os.environ["PGPASSWORD"] = pgpassword
     os.environ["PGUSER"] = pguser
     os.environ["DBHOST"] = pgnetloc
+    rs_path = "applications/{}".format(runestone_name)
 
     # Assume we are running with working directory in tests.
     if pytestconfig.getoption("skipdbinit"):
@@ -179,101 +173,119 @@ def web2py_server(runestone_name, web2py_server_address, pytestconfig):
         xqt("rsmanage --verbose initdb --reset --force")
 
         # Copy the test book to the books directory.
-        rmtree("../books/test_course_1", ignore_errors=True)
+        rmtree("{}/books/test_course_1".format(rs_path), ignore_errors=True)
         # Sometimes this fails for no good reason on Windows. Retry.
         for retry in range(100):
             try:
-                copytree("test_course_1", "../books/test_course_1")
+                copytree(
+                    "{}/tests/test_course_1".format(rs_path),
+                    "{}/books/test_course_1".format(rs_path),
+                )
                 break
             except OSError:
                 if retry == 99:
                     raise
         # Build the test book to add in db fields needed.
-        with pushd("../books/test_course_1"):
+        with pushd(
+            "{}/books/test_course_1".format(rs_path)
+        ), MonkeyPatch().context() as m:
             # The runestone build process only looks at ``DBURL``.
-            os.environ["DBURL"] = os.environ["TEST_DBURL"]
+            m.setenv("DBURL", os.environ["TEST_DBURL"])
             xqt(
                 "{} -m runestone build --all".format(sys.executable),
                 "{} -m runestone deploy".format(sys.executable),
             )
 
-    with pushd("../../.."):
-        xqt("{} -m coverage erase".format(sys.executable))
+    xqt("{} -m coverage erase".format(sys.executable))
 
-        # For debug, uncomment the next three lines, then run web2py manually to see all debug messages. Use a command line like ``python web2py.py -a pass -X -K runestone,runestone &`` to also start the workers for the scheduler.
-        ##import pdb; pdb.set_trace()
-        ##yield DictToObject(dict(password=password))
-        ##return
+    # For debug:
+    #
+    # #.    Uncomment the next three lines
+    # #.    Set ``WEB2PY_CONFIG`` to ``test``; all the other usual Runestone environment variables must also be set.
+    # #.    Run ``python -m celery --app=scheduled_builder worker --pool=gevent --concurrency=4 --loglevel=info`` from ``applications/runestone/modules`` to use the scheduler. I'm assuing the redis server (which the tests needs regardless of debug) is also running.
+    # #.    Run web2py manually to see all debug messages. Use a command line like ``python web2py.py -a pass``.
+    ##import pdb; pdb.set_trace()
+    ##yield DictToObject(dict(password=password))
+    ##return
 
-        # Start the web2py server and the `web2py scheduler <http://web2py.com/books/default/chapter/29/04/the-core#Scheduler-Deployment>`_.
-        web2py_server = subprocess.Popen(
-            [
-                sys.executable,
-                "-m",
-                "coverage",
-                "run",
-                "--append",
-                "--source=" + COVER_DIRS,
-                "web2py.py",
-                "-a",
-                password,
-                "--nogui",
-                "--minthreads=10",
-                "--maxthreads=20",
-            ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            # Produce text (not binary) output for nice output in ``echo()`` below.
-            universal_newlines=True,
-        )
-        # Wait for the webserver to come up.
-        for tries in range(50):
-            try:
-                urlopen(web2py_server_address, timeout=5)
-            except URLError:
-                # Wait for the server to come up.
-                time.sleep(0.1)
-            else:
-                # The server is up. We're done.
-                break
-        # Running two processes doesn't produce two active workers. Running with ``-K runestone,runestone`` means additional subprocesses are launched that we lack the PID necessary to kill. So, just use one worker.
-        web2py_scheduler = subprocess.Popen(
-            [
-                sys.executable,
-                "-m",
-                "coverage",
-                "run",
-                "--append",
-                "--source=" + COVER_DIRS,
-                "web2py.py",
-                "-K",
-                runestone_name,
-            ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
+    # Start the web2py server and the `web2py scheduler <http://web2py.com/books/default/chapter/29/04/the-core#Scheduler-Deployment>`_.
+    web2py_server = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "coverage",
+            "run",
+            "--append",
+            "--source=" + COVER_DIRS,
+            "web2py.py",
+            "-a",
+            password,
+            "--nogui",
+            "--minthreads=10",
+            "--maxthreads=20",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        # Produce text (not binary) output for nice output in ``echo()`` below.
+        universal_newlines=True,
+    )
+    # Wait for the webserver to come up.
+    for tries in range(50):
+        try:
+            urlopen(web2py_server_address, timeout=5)
+        except URLError:
+            # Wait for the server to come up.
+            time.sleep(0.1)
+        else:
+            # The server is up. We're done.
+            break
+    # Run Celery. Per https://github.com/celery/celery/issues/3422, it sounds like celery doesn't support coverage, so omit it.
+    celery_process = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "celery",
+            "--app=scheduled_builder",
+            "worker",
+            "--pool=gevent",
+            "--concurrency=4",
+            "--loglevel=info",
+        ],
+        # Celery must be run in the ``modules`` directory, where the worker is defined.
+        cwd="{}/modules".format(rs_path),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        # Produce text (not binary) output for nice output in ``echo()`` below.
+        universal_newlines=True,
+    )
 
-        # Start a thread to read web2py output and echo it.
-        def echo():
-            stdout, stderr = web2py_server.communicate()
-            print("\n" "web2py server stdout\n" "--------------------\n")
-            print(stdout)
-            print("\n" "web2py server stderr\n" "--------------------\n")
-            print(stderr)
+    # Start a thread to read web2py output and echo it.
+    def echo(popen_obj, description_str):
+        stdout, stderr = popen_obj.communicate()
+        print("\n" "{} stdout\n" "--------------------\n".format(description_str))
+        print(stdout)
+        print("\n" "{} stderr\n" "--------------------\n".format(description_str))
+        print(stderr)
 
-        echo_thread = Thread(target=echo)
+    echo_threads = [
+        Thread(target=echo, args=(web2py_server, "web2py server")),
+        Thread(target=echo, args=(celery_process, "celery process")),
+    ]
+    # TODO: Redis for Windows.
+    for echo_thread in echo_threads:
         echo_thread.start()
 
-        # Save the password used.
-        web2py_server.password = password
-        # Wait for the server to come up. The delay varies; this is a guess.
+    # Save the password used.
+    web2py_server.password = password
+    # Wait for the server to come up. The delay varies; this is a guess.
 
-        # After this comes the `teardown code <https://docs.pytest.org/en/latest/fixture.html#fixture-finalization-executing-teardown-code>`_.
-        yield web2py_server
+    # After this comes the `teardown code <https://docs.pytest.org/en/latest/fixture.html#fixture-finalization-executing-teardown-code>`_.
+    yield web2py_server
 
-        # Terminate the server and schedulers to give web2py time to shut down gracefully.
-        web2py_server.terminate()
-        web2py_scheduler.terminate()
+    # Terminate the server and schedulers to give web2py time to shut down gracefully.
+    web2py_server.terminate()
+    celery_process.terminate()
+    for echo_thread in echo_threads:
         echo_thread.join()
 
 
@@ -286,21 +298,21 @@ def runestone_name():
 # The environment of a web2py controller.
 @pytest.fixture
 def runestone_env(runestone_name):
-    return web2py_controller_env(runestone_name)
+    env = web2py_controller_env(runestone_name)
+    yield env
+    # Close the database connection after the test completes.
+    env["db"].close()
 
 
 # Create fixture providing a web2py controller environment for a Runestone application.
 @pytest.fixture
 def runestone_controller(runestone_env):
-    env = web2py_controller(runestone_env)
-    yield env
-    # Close the database connection after the test completes.
-    env.db.close()
+    return DictToObject(runestone_env)
 
 
 # Database
 # --------
-# These fixture provide access to a clean instance of the Runestone database.
+# This fixture provides access to a clean instance of the Runestone database.
 #
 # Provide acess the the Runestone database through a fixture. After a test runs,
 # restore the database to its initial state.
@@ -309,8 +321,8 @@ def runestone_db(runestone_controller):
     db = runestone_controller.db
     yield db
 
-    # Restore the database state after the test finishes.
-    # ----------------------------------------------------
+    # **Restore the database state after the test finishes**
+    ##------------------------------------------------------
     # Rollback changes, which ensures that any errors in the database connection
     # will be cleared.
     db.rollback()
@@ -338,7 +350,6 @@ def runestone_db(runestone_controller):
  public.auth_permission,
  public.auth_user,
  public.clickablearea_answers,
- public.coach_hints,
  public.code,
  public.codelens_answers,
  public.course_instructor,
@@ -378,7 +389,7 @@ def runestone_db(runestone_controller):
     db.commit()
 
 
-# Provide context managers for manipulating the Runestone database.
+# Provide a class for manipulating the Runestone database.
 class _RunestoneDbTools(object):
     def __init__(self, runestone_db):
         self.db = runestone_db
@@ -578,6 +589,8 @@ def test_client(
     tc.tearDown()
 
 
+# User
+# ^^^^
 # Provide a method to create a user and perform common user operations.
 class _TestUser(object):
     def __init__(
@@ -764,6 +777,8 @@ def test_user_1(runestone_db_tools, test_user):
     return test_user("test_user_1", "password_1", course)
 
 
+# Assigmment
+# ^^^^^^^^^^
 class _TestAssignment(object):
     assignment_count = 0
 
@@ -943,6 +958,8 @@ def runestone_selenium_driver(selenium_driver, web2py_server_address, runestone_
     return selenium_driver
 
 
+# User
+# ^^^^
 # Provide basic Selenium-based user operations.
 class _SeleniumUser:
     def __init__(
