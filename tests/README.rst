@@ -9,17 +9,16 @@ If you just want to run the tests:
 
   .. code-block::
 
-      cd runestone
       pip install -r requirements-test.txt
 
 
-- Next, switch to the test directory (``runestone/tests``)
 - **Make sure that you don't have a runestone server running.** If you do, that server will handle the web page requests that occur during the tests instead of letting the test server respond to them, and it will be accessing the wrong database.
-- Run the tests. From the shell:
+- Run the tests. From the shell, **in the root directory for web2py**:
 
   .. code-block::
 
-      pytest
+      cd
+      pytest applications/runestone/tests
 
 
   Or if you have a docker container set up:
