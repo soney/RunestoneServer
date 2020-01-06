@@ -184,6 +184,8 @@ def index():
             )
 
         auth.login_user(user)
+        if not auth.user:
+            foobar
 
     if assignment_id:
         # If the assignment is released, but this is the first time a student has visited the assignment, auto-upload the grade.
@@ -238,6 +240,8 @@ def index():
                 auth_user=user.id,
                 course_name=getCourseNameFromId(course_id),
             )
+        if not auth.user:
+            foobar
         redirect(
             URL(
                 "assignments",
