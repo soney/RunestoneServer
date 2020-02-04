@@ -16,6 +16,7 @@ from textwrap import dedent
 import json
 from threading import Thread
 import datetime
+import time
 
 # Third-party imports
 # -------------------
@@ -43,7 +44,7 @@ def test_manual(runestone_db_tools, test_user):
     course_1 = runestone_db_tools.create_course()
     test_user("bob", "bob", course_1)
 
-    # Pause in the debugginer until manual testing is done.
+    # Pause in the debugger until manual testing is done.
     import pdb
 
     pdb.set_trace()
@@ -81,7 +82,6 @@ def test_killer(test_assignment, test_client, test_user_1, runestone_db_tools):
         # ----------------
         ("assignments/chooseAssignment", True, "Assignments", 1),
         ("assignments/doAssignment", True, "Bad Assignment ID", 1),
-        ("assignments/index", True, "Student Progress for", 1),
         # TODO: Why 2 errors here? Was just 1.
         (
             "assignments/practice",
@@ -141,12 +141,7 @@ def test_killer(test_assignment, test_client, test_user_1, runestone_db_tools):
         # --------------
         ("dashboard/index", True, "Instructor Dashboard", 1),
         ("dashboard/grades", True, "Gradebook", 1),
-        (
-            "dashboard/studentreport",
-            True,
-            "Please make sure you are in the correct course",
-            1,
-        ),
+        ("dashboard/studentreport", True, "Recent Activity", 1,),
         # TODO: This doesn't really test anything about either
         # exercisemetrics or questiongrades other than properly handling a call with no information
         ("dashboard/exercisemetrics", True, "Instructor Dashboard", 1),
@@ -804,6 +799,7 @@ def test_deleteaccount(test_client, runestone_db_tools, test_user):
     db = runestone_db_tools.db
     res = db(db.auth_user.username == "user_to_delete").select().first()
     print(res)
+    time.sleep(2)
     assert not db(db.useinfo.sid == "user_to_delete").select().first()
     assert not db(db.code.sid == "user_to_delete").select().first()
     assert not db(db.acerror_log.sid == "user_to_delete").select().first()

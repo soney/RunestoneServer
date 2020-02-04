@@ -58,9 +58,7 @@ def _score_one_code_run(row, points, autograde):
         (ignore, pct, ignore, passed, ignore, failed) = row.act.split(":")
         pct_correct = 100 * float(passed) / (int(failed) + int(passed))
     except:
-        pct_correct = (
-            0
-        )  # can still get credit if autograde is 'interact' or 'visited'; but no autograded value
+        pct_correct = 0  # can still get credit if autograde is 'interact' or 'visited'; but no autograded value
     return _score_from_pct_correct(pct_correct, points, autograde)
 
 
@@ -592,7 +590,7 @@ def _autograde_one_q(
 
 
 def _save_question_grade(
-    sid, course_name, question_name, score, useinfo_id=None, deadline=None, db=None
+    sid, course_name, question_name, score, answer_id=None, deadline=None, db=None
 ):
     try:
         db.question_grades.update_or_insert(
@@ -606,7 +604,7 @@ def _save_question_grade(
             div_id=question_name,
             score=score,
             comment="autograded",
-            useinfo_id=None,
+            answer_id=answer_id,
             deadline=deadline,
         )
     except IntegrityError:
@@ -933,7 +931,7 @@ def do_autograde(
                 course_name,
                 name,
                 save_points,
-                useinfo_id=None,
+                answer_id=None,
                 deadline=deadline,
                 db=db,
             )
@@ -1045,8 +1043,10 @@ def do_check_answer(
     else:
         # Compute q using the auto grader
         autograde = "pct_correct"
-        if lastQuestion.autograde is not None:
+        if lastQuestion.autograde is not None and lastQuestion.autograde != "":
             autograde = lastQuestion.autograde
+        #  TODO: _autograde_one_q returns 1 thing except for in one instance
+        #  this seems like a terrible idea.
         q, trials_num = _autograde_one_q(
             course_name,
             username,
@@ -1061,6 +1061,7 @@ def do_check_answer(
             db=db,
             now=now,
         )
+
     flashcard = _change_e_factor(flashcard, q)
     flashcard = _get_next_i_interval(flashcard, q)
     flashcard.next_eligible_date = (

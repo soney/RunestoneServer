@@ -163,32 +163,16 @@ def index():
             user["section"] = section_id
             user.update_record()
 
+            db.user_courses.update_or_insert(user_id=user.id, course_id=course_id)
+
             # Update instructor status.
             if instructor:
-                # Give the instructor free access to the book.
-                db.user_courses.update_or_insert(user_id=user.id, course_id=course_id)
-                db.course_instructor.update_or_insert(
-                    instructor=user.id, course=course_id
-                )
+                db.course_instructor.update_or_insert(instructor=user.id, course=course_id)
             else:
                 db(
                     (db.course_instructor.instructor == user.id)
                     & (db.course_instructor.course == course_id)
                 ).delete()
-
-            # Before creating a new user_courses record, present payment or donation options.
-            if (
-                not db(
-                    (db.user_courses.user_id == user.id)
-                    & (db.user_courses.course_id == course_id)
-                )
-                .select()
-                .first()
-            ):
-                # Store the current URL, so this request can be completed after creating the user.
-                session.lti_url_next = full_uri
-                auth.login_user(user)
-                redirect(URL(c="default"))
 
         if section_id:
             # set the section in the section_users table
@@ -200,6 +184,8 @@ def index():
             )
 
         auth.login_user(user)
+        if not auth.user:
+            foobar
 
     if assignment_id:
         # If the assignment is released, but this is the first time a student has visited the assignment, auto-upload the grade.
@@ -254,6 +240,8 @@ def index():
                 auth_user=user.id,
                 course_name=getCourseNameFromId(course_id),
             )
+        if not auth.user:
+            foobar
         redirect(
             URL(
                 "assignments",

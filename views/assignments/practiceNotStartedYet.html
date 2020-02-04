@@ -1,14 +1,26 @@
-{{extend 'admin/instructors.html'}}
+{{extend 'layout.html'}}
 
 {{block tabcontent}}
+
 {{include '_sphinx_static_files.html'}}
 
 <!-- Add icon library -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
 
 <div id='part1' style="padding-left: 40px">
-    <h4 style="margin-top: 25px;">{{=message1}}</h4>
-    <h4>{{=message2}}</h4>
+    <h4 style="margin-top: 25px;">Welcome</h4>
+        If you are logging in for the first time and landed here, welcome to the runestone textbook.
+        <p></p>
+        You can navigate to the table of contents from here and visit any page you like. Now that you are logged in, you
+        can also follow links from Coursera or your learning management system that take you directly to specific pages.
+        <p></p>
+    <h4>Getting Started with the Practice Feature</h4>
+        If you were looking for the practice feature and landed here, please read the message below about how to get started with the practice feature.
+        <p></p>
+        {{=message1}}
+        <p></p>
+        {{=message2}}
+
 </div>
 {{end}}
 

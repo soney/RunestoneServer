@@ -28,6 +28,8 @@
     <select onchange="updateQuestionList();" class="form-control" id="chaporassignselector" style="display:none;" >
     </select>
     <span id="releasestate" style="color: red;"></span>
+    <button id="releasebutton" style="text-align: center; visibility: hidden;" class="btn btn-primary btn-sm" onclick="toggle_release_grades();">Release Grades</button>
+
   </div>
 
   <div>
@@ -76,8 +78,6 @@
     {{pass}}
   </div>
 
-  <button id="releasebutton" style="text-align: center; visibility: hidden;" class="btn btn-info" onclick="toggle_release_grades();">Release Grades</button>
-
 
 </div>
 
@@ -92,6 +92,7 @@
 
     <div style="display:none" id="shortanswerresponse"></div>
     <div id="initialtext">
+        <h4 style="color: red;">The Grading interface Changed, Please Read</h4>
         For <strong>Manual</strong> grading:
         <ol>
           <li>Begin by Selecting Chapter or Assignment mode for grading. Chapter

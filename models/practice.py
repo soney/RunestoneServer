@@ -71,7 +71,7 @@ db.define_table(
     Field("user_id", db.auth_user),
     Field("course_name", "string"),
     Field("practice_completion_date", type="date"),
-    migrate=table_migrate_prefix + "user_topic_practice_Completion.table",
+    migrate=table_migrate_prefix + "user_topic_practice_completion.table",
 )
 
 

@@ -128,11 +128,25 @@ function getSelectedItem(type) {
     }
 }
 
-//
+// This function is called from the gradeing page when the
+// autograde and show scores button is clicked.
 function autoGrade() {
     var assignment = getSelectedItem("assignment");
     var question = getSelectedItem("question");
     var studentID = getSelectedItem("student");
+    // todo -- check the number of selected
+    let qs = $("#questionselector").select2("val");
+    if (qs && qs.length > 1) {
+        alert("Autograding does not work with multiple selections.  Leave blank to grade all questions.  You may select 1 question.");
+        $("#autogradesubmit").prop("disabled", false);
+        return;
+    }
+    let ss = $("#studentselector").select2("val");
+    if (ss && ss.length > 1) {
+        alert("Autograding does not work with multiple selections.  Leave blank to grade all students. You may select 1 student.");
+        $("#autogradesubmit").prop("disabled", false);
+        return;
+    }
     var enforceDeadline = $("#enforceDeadline").is(":checked");
     var params = {
         url: eBookConfig.autogradingURL,
@@ -288,6 +302,8 @@ function createGradingPanel(element, acid, studentId, multiGrader) {
                 graderactive: true,
                 enforceDeadline: enforceDeadline,
                 deadline: dl,
+                multiGrader: multiGrader,
+                gradingContainer: elementID,
             });
         }
     };
@@ -1222,6 +1238,11 @@ function update_assignment(form) {
     } else {
         form.visible.value = "F";
     }
+    if (form.is_timed.checked) {
+        form.is_timed.value = "T";
+    } else {
+        form.is_timed.value = "F";
+    }
     $.getJSON(
         "save_assignment",
         $(form).serialize() + "&assignment_id=" + getAssignmentId(),
@@ -1269,10 +1290,16 @@ function assignmentInfo() {
             $("#assignment_description").val(assignmentData["description"]);
             $("#readings-threshold").val(assignmentData["threshold"]);
             $("#assign_visible").val(assignmentData["visible"]);
+            $("#assign_is_timed").val(assignmentData["is_timed"]);
             if (assignmentData["visible"] === true) {
                 $("#assign_visible").prop("checked", true);
             } else {
                 $("#assign_visible").prop("checked", false);
+            }
+            if (assignmentData["is_timed"] === true) {
+                $("#assign_is_timed").prop("checked", true);
+            } else {
+                $("#assign_is_timed").prop("checked", false);
             }
             $("#readings-points-to-award").val(assignmentData["points_to_award"]);
             $("#readings-autograder").val(assignmentData["readings_autograder"]);
@@ -1652,7 +1679,11 @@ function renderRunestoneComponent(componentSrc, whereDiv, moreOpts) {
         } else {
             let res = component_factory[componentKind](opt);
             if (componentKind === "activecode") {
-                edList[res.divid] = res;
+                if (moreOpts.multiGrader) {
+                    edList[`${moreOpts.gradingContainer} ${res.divid}`] = res;
+                } else {
+                    edList[res.divid] = res;
+                }
             }
         }
     }
@@ -1712,6 +1743,7 @@ function renderRunestoneComponent(componentSrc, whereDiv, moreOpts) {
         }
         // $(`#${whereDiv}`).css("background-color", "white");
     }
+    MathJax.Hub.Queue(["Typeset",MathJax.Hub]);
 }
 
 // Called by the "Search" button in the "Search question bank" panel.
@@ -1904,7 +1936,6 @@ function set_release_button() {
     }
 
     // change the release button appropriately
-    // var release_button = document.getElementById("releasebutton");
     var release_button = $("#releasebutton");
     if (assignment == null) {
         //hide the release grades button
@@ -1916,10 +1947,10 @@ function set_release_button() {
         var release_state = assignment_release_states[assignment];
         // If so, set the button text appropriately
         if (release_state == true) {
-            release_button.text("Hide Grades from Students for " + assignment);
+            release_button.text("Hide Grades");
             $("#releasestate").text("");
         } else {
-            release_button.text("Release Grades to Students for " + assignment);
+            release_button.text("Release Grades");
             $("#releasestate").text("Grades Not Released");
         }
     }
@@ -2000,4 +2031,43 @@ function updateCourse(widget, attr) {
             alert("Update Failed");
         }
     });
+}
+
+function resetOnePassword() {
+    let student = $("#studentList").val()
+    if (student.length > 1) {
+        alert("You can only reset ONE student at a time");
+        return;
+    }
+    if (student[0] == "None") {
+        alert("Please select a student first");
+        return;
+    }
+    let name = $(`#studentList option[value=${student[0]}]`).text();
+    let newpw = prompt(`Enter New Password for ${name}`);
+    if (! newpw) {
+        return;
+    }
+    data = {newpass: newpw};
+    jQuery.ajax({
+        url: "/runestone/admin/resetpw",
+        type: "POST",
+        dataType: "JSON",
+        data: {
+            sid: student[0],
+            newpass: newpw,
+        },
+        success: function(retdata) {
+            if (retdata.status == "success") {
+                alert(retdata.message);
+            } else {
+                alert(retdata.message);
+            }
+        },
+
+        error: function(err) {
+            alert(`Failed to reset password for ${name}`)
+        }
+
+    })
 }

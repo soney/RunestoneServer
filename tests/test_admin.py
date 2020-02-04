@@ -120,6 +120,144 @@ def test_qbank(test_client, test_user_1):
     assert len(res) == 2
 
 
+def test_edit_question_does_not_exist(test_user_1, test_client):
+    test_user_1.make_instructor()
+    test_user_1.login()
+    data = {
+        "question": "non-existant-question",
+        "name": "non-existant-question",
+        "htmlsrc": "<p>input</p>",
+    }
+    res = test_client.validate("admin/edit_question", data=data)
+    res = json.loads(res)
+    # this does not return a json object if the test succeeds
+    assert res == "Could not find question non-existant-question to update"
+
+
+def test_edit_question_does_not_own(
+    test_user_1, test_user, test_client, test_assignment
+):
+    test_user_1.make_instructor()
+    test_user_1.login()
+    my_ass = test_assignment("test_assignment", test_user_1.course)
+    data = {
+        "template": "mchoice",
+        "name": "edit_unown_test_question_1",
+        "question": "edit_unown_test_question_1",
+        "difficulty": 0,
+        "tags": None,
+        "chapter": "test_chapter_1",
+        "subchapter": "Exercises",
+        "isprivate": False,
+        "assignmentid": my_ass.assignment_id,
+        "points": 10,
+        "timed": False,
+        "htmlsrc": "<p>Hello World</p>",
+    }
+    test_client.validate("admin/createquestion", data=data)
+
+    test_user_1.logout()
+    test_user_2 = test_user(
+        "test_user_2", "pass", test_user_1.course, first_name="user", last_name="2"
+    )
+    test_user_2.make_instructor()
+    test_user_2.login()
+    data = {
+        "question": "edit_unown_test_question_1",
+        "name": "edit_unown_test_question_1",
+        "questiontext": "Hell0World~",
+        "htmlsrc": "<p>Hell0 W0rld</p>",
+    }
+    res = test_client.validate("admin/edit_question", data=data)
+    res = json.loads(res)
+    assert res == "You do not own this question, Please assign a new unique id"
+
+
+def test_edit_question_does_not_own_rename(
+    test_user_1, test_user, test_client, test_assignment
+):
+    # Checks to see if replacement name for question collides with existing question that is not owned.
+    test_user_1.make_instructor()
+    test_user_1.login()
+    my_ass = test_assignment("test_assignment", test_user_1.course)
+    data = {
+        "template": "mchoice",
+        "name": "edit_rename_test_question_1",
+        "question": "edit_rename_test_question_1",
+        "difficulty": 0,
+        "tags": None,
+        "chapter": "test_chapter_1",
+        "subchapter": "Exercises",
+        "isprivate": False,
+        "assignmentid": my_ass.assignment_id,
+        "points": 10,
+        "timed": False,
+        "htmlsrc": "<p>Hello World</p>",
+    }
+    test_client.validate("admin/createquestion", data=data)
+    data = {
+        "template": "mchoice",
+        "name": "edit_rename_test_question_2",
+        "question": "edit_rename_test_question_2",
+        "difficulty": 0,
+        "tags": None,
+        "chapter": "test_chapter_1",
+        "subchapter": "Exercises",
+        "isprivate": False,
+        "assignmentid": my_ass.assignment_id,
+        "points": 10,
+        "timed": False,
+        "htmlsrc": "<p>Hello World</p>",
+    }
+    test_client.validate("admin/createquestion", data=data)
+
+    test_user_1.logout()
+    test_user_2 = test_user(
+        "test_user_2", "pass", test_user_1.course, first_name="user", last_name="2"
+    )
+    test_user_2.make_instructor()
+    test_user_2.login()
+    data = {
+        "question": "edit_rename_test_question_2",
+        "name": "edit_rename_test_question_1",  # overwriting an existant
+        "questiontext": "Hell0World~",
+        "htmlsrc": "<p>Hell0 W0rld</p>",
+    }
+    res = test_client.validate("admin/edit_question", data=data)
+    res = json.loads(res)
+    assert res == "You cannot replace a question you did not author"
+
+
+def test_edit_question_success(test_user_1, test_client, test_assignment):
+    test_user_1.make_instructor()
+    test_user_1.login()
+    my_ass = test_assignment("test_assignment", test_user_1.course)
+    data = {
+        "template": "mchoice",
+        "name": "edit_success_test_question_1",
+        "question": "edit_success_test_question_1",
+        "difficulty": 0,
+        "tags": ["testtag"],
+        "chapter": "test_chapter_1",
+        "subchapter": "Exercises",
+        "isprivate": False,
+        "assignmentid": my_ass.assignment_id,
+        "points": 10,
+        "timed": False,
+        "htmlsrc": "<p>Hello World</p>",
+    }
+    test_client.validate("admin/createquestion", data=data)
+    data = {
+        "question": "edit_success_test_question_1",
+        "name": "edit_success_test_question_1",
+        "questiontext": "Hello!",
+        "htmlsrc": "<p>Hello!</p>",
+    }
+    res = test_client.validate("admin/edit_question", data=data)
+    res = json.loads(res)
+    assert res == "Success - Edited Question Saved"
+
+
 def test_gettemplate(test_user_1, test_client):
     test_user_1.make_instructor()
     test_user_1.login()
@@ -255,3 +393,100 @@ def test_flag_question(test_assignment, test_user_1, test_client, runestone_db_t
     db = runestone_db_tools.db
 
     assert db(db.questions.name == "subc_b_fitb").select().first().review_flag
+
+
+def test_get_assignment_release_states(test_assignment, test_client, test_user_1):
+    my_ass = test_assignment("test_assignment", test_user_1.course)
+    my_ass.addq_to_assignment(question="subc_b_fitb", points=10)
+    my_ass.save_assignment()
+    my_ass.autograde()
+    my_ass.calculate_totals()
+    my_ass.release_grades()
+
+    res = test_client.validate("admin/get_assignment_release_states")
+    res = json.loads(res)
+
+    assert res["test_assignment"] == True
+
+
+def test_delete_assignment_question(test_assignment, test_client, test_user_1):
+    test_user_1.make_instructor()
+    test_user_1.login()
+    my_ass = test_assignment("test_assignment", test_user_1.course)
+    my_ass.addq_to_assignment(question="subc_b_fitb", points=10)
+    assert len(my_ass.questions()) == 1
+
+    _ = test_client.validate(
+        "admin/delete_assignment_question",
+        data=dict(name="subc_b_fitb", assignment_id=my_ass.assignment_id),
+    )
+
+    assert len(my_ass.questions()) == 0
+
+
+def test_reorder_assignment_questions(
+    test_assignment, test_client, test_user_1, runestone_db_tools
+):
+    test_user_1.make_instructor()
+    test_user_1.login()
+    my_ass = test_assignment("test_assignment", test_user_1.course)
+    my_ass.addq_to_assignment(question="subc_b_fitb", points=10)
+    my_ass.addq_to_assignment(question="subc_b_1", points=10)
+
+    questions = my_ass.questions()
+    question_id_one, name_one = questions[0]
+    question_id_two, name_two = questions[1]
+
+    db = runestone_db_tools.db
+
+    res = (
+        db(
+            (db.assignment_questions.assignment_id == my_ass.assignment_id)
+            & (db.assignment_questions.question_id == question_id_one)
+        )
+        .select(db.assignment_questions.sorting_priority)
+        .first()
+    )
+
+    assert res.sorting_priority == 1
+
+    res = (
+        db(
+            (db.assignment_questions.assignment_id == my_ass.assignment_id)
+            & (db.assignment_questions.question_id == question_id_two)
+        )
+        .select(db.assignment_questions.sorting_priority)
+        .first()
+    )
+
+    assert res.sorting_priority == 2
+
+    res = test_client.validate(
+        "admin/reorder_assignment_questions",
+        data={
+            "names[]": ["subc_b_1", "subc_b_fitb"],
+            "assignment_id": my_ass.assignment_id,
+        },
+    )
+    assert json.loads(res) == "Reordered in DB"
+
+    res = (
+        db(
+            (db.assignment_questions.assignment_id == my_ass.assignment_id)
+            & (db.assignment_questions.question_id == question_id_one)
+        )
+        .select(db.assignment_questions.sorting_priority)
+        .first()
+    )
+    assert res.sorting_priority == 2
+
+    res = (
+        db(
+            (db.assignment_questions.assignment_id == my_ass.assignment_id)
+            & (db.assignment_questions.question_id == question_id_two)
+        )
+        .select(db.assignment_questions.sorting_priority)
+        .first()
+    )
+
+    assert res.sorting_priority == 1

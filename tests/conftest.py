@@ -104,7 +104,7 @@ class _object(object):
 # Create a web2py controller environment. This is taken from pieces of ``gluon.shell.run``. It returns a ``dict`` containing the environment.
 def web2py_controller_env(
     # _`application`: The name of the application to run in, as a string.
-    application
+    application,
 ):
 
     env = gluon.shell.env(application, import_models=True)
@@ -160,6 +160,7 @@ def web2py_server(runestone_name, web2py_server_address, pytestconfig):
     os.environ["PGPASSWORD"] = pgpassword
     os.environ["PGUSER"] = pguser
     os.environ["DBHOST"] = pgnetloc
+    rs_path = "applications/{}".format(runestone_name)
 
     # Assume we are running with working directory in tests.
     if pytestconfig.getoption("skipdbinit"):
@@ -172,7 +173,6 @@ def web2py_server(runestone_name, web2py_server_address, pytestconfig):
         xqt("rsmanage --verbose initdb --reset --force")
 
         # Copy the test book to the books directory.
-        rs_path = "applications/{}".format(runestone_name)
         rmtree("{}/books/test_course_1".format(rs_path), ignore_errors=True)
         # Sometimes this fails for no good reason on Windows. Retry.
         for retry in range(100):
@@ -198,7 +198,12 @@ def web2py_server(runestone_name, web2py_server_address, pytestconfig):
 
     xqt("{} -m coverage erase".format(sys.executable))
 
-    # For debug, uncomment the next three lines, then run web2py manually to see all debug messages. Use a command line like ``python web2py.py -a pass -X -K runestone,runestone &`` to also start the workers for the scheduler.
+    # For debug:
+    #
+    # #.    Uncomment the next three lines
+    # #.    Set ``WEB2PY_CONFIG`` to ``test``; all the other usual Runestone environment variables must also be set.
+    # #.    Run ``python -m celery --app=scheduled_builder worker --pool=gevent --concurrency=4 --loglevel=info`` from ``applications/runestone/modules`` to use the scheduler. I'm assuing the redis server (which the tests needs regardless of debug) is also running.
+    # #.    Run web2py manually to see all debug messages. Use a command line like ``python web2py.py -a pass``.
     ##import pdb; pdb.set_trace()
     ##yield DictToObject(dict(password=password))
     ##return
@@ -345,7 +350,6 @@ def runestone_db(runestone_controller):
  public.auth_permission,
  public.auth_user,
  public.clickablearea_answers,
- public.coach_hints,
  public.code,
  public.codelens_answers,
  public.course_instructor,
@@ -375,7 +379,7 @@ def runestone_db(runestone_controller):
  public.user_state,
  public.user_sub_chapter_progress,
  public.user_topic_practice,
- public."user_topic_practice_Completion",
+ public."user_topic_practice_completion",
  public.user_topic_practice_feedback,
  public.user_topic_practice_log,
  public.user_topic_practice_survey,

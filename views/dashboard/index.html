@@ -10,9 +10,9 @@
 <script src="{{=URL('static', 'dashboard-charts.js')}}"></script>
 
 <div id="dashboard">
-    <h1>{{=course.course_name}}
-        <span class="dash-title-description">Instructor Dashboard</span>
-        <a href="{{=URL('dashboard','subchapoverview')}}" style="font-size: small">Overview Reports</a>
+    <h1>
+        <span class="dash-title-description">{{=course.course_name}} Instructor Dashboard</span>
+        <a href="{{=URL('dashboard','subchapoverview')}}" class="btn btn-med btn-primary" role="button" style="float: right; font-size: small;">Chapter Activity</a>
     </h1>
     <h2 style="width: 800px; display: inline;">{{=selected_chapter['chapter_name']}}</h2>
     <div style="float: right"><b>Select Chapter</b>
@@ -25,7 +25,7 @@
                 {{pass}}
             {{pass}}
         </select>
-        <button onclick="window.location.href='{{=URL('grades')}}'">Gradebook</button>
+        <button class="btn btn-sm btn-primary" onclick="window.location.href='{{=URL('grades')}}'">Gradebook</button>
     </div>
     <div class="col-md-7" style="">
         <div class="dash-section">
@@ -143,15 +143,15 @@
         <div id="classactivitycontent" class="dash-section-content">
             <div style="float: left; margin-right: 1em;">
                 <div style="height: 10px; width: 10px; border: 1px solid #333; background-color: #009DD9; float: left; margin-top: 3px; margin-right: 3px"></div>
-                Sections Completed
+                Page Views
             </div>
             <div style="float: left; margin-right: 1em;">
                 <div style="height: 10px; width: 10px; border: 1px solid #333; background-color: #00CC66; float: left; margin-top: 3px; margin-right: 3px"></div>
-                Correct Exercise Attempts
+                Active Code Runs
             </div>
             <div style="float: left; margin-right: 1em;">
                 <div style="height: 10px; width: 10px; border: 1px solid #333; background-color: #CCCC33; float: left; margin-top: 3px; margin-right: 3px"></div>
-                Missed Exercise Attempts
+                Other Activities
             </div>
             <div id="studentchart" style="position:relative; clear:both;"></div>
             <script type="text/javascript">

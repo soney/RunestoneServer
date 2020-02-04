@@ -9,17 +9,16 @@ If you just want to run the tests:
 
   .. code-block::
 
-      cd runestone
       pip install -r requirements-test.txt
 
 
-- Next, switch to the test directory (``runestone/tests``)
 - **Make sure that you don't have a runestone server running.** If you do, that server will handle the web page requests that occur during the tests instead of letting the test server respond to them, and it will be accessing the wrong database.
-- Run the tests. From the shell:
+- Run the tests. From the shell, **in the root directory for web2py**:
 
   .. code-block::
 
-      pytest
+      cd
+      pytest applications/runestone/tests
 
 
   Or if you have a docker container set up:
@@ -252,3 +251,14 @@ From the scripts folder, run the command:
 
 
 Then in your browser go to `http://127.0.0.1:8089` You an set up how many users you want and how fast they will come online.  The webpage will update every couple of seconds to show you statistics on load times for various kinds of pages.
+
+
+Manual debug
+============
+In order to debug the web2py server and set breakpoints, web2py provides an integrated debugger. However, I'd found it to be unreliable. For a more traditional debugging approach, it's possible to invoke functions defined on the server by creating a web2py controller environment. To do so:
+
+#.  Navigate to the web2py directory then execute ``python web2py.py -S runestone -M`` from the command line. Now, ``db`` will be the object referring to the current web2py database, ``request`` is a mock request object, and so on.
+#.  To log in (if desired), use ``auth.login_user(db.auth_user(id))`` (or any similar query of the ``auth_user`` table), where ``id`` is the id of an ``auth_user`` row.
+#.  To debug code in a controller, add the line ``import pdb; pdb.set_trace()`` to the function to debug, then execute it using the following steps.
+#.  To load code from a specific controller such as ``default``, use ``exec(open("applications/runestone/controllers/default.py").read())``.
+#.  Now, you can directly invoke functions from that controller -- for example, ``about()`` will return ``{}``.
