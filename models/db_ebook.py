@@ -123,7 +123,7 @@ db.define_table(
     Field("course_name", "string"),
     Field("answer", "string"),
     Field("correct", "boolean"),
-    Field("minHeight", "string"),
+    Field("minheight", "string"),
     migrate=table_migrate_prefix + "dragndrop_answers.table",
 )
 db.define_table(

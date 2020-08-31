@@ -4,6 +4,20 @@ from random import shuffle
 
 # Get practice data for this student and create flashcards for them is they are newcomers.
 def _get_practice_data(user, timezoneoffset, db):
+    # Only questions that are marked for practice are eligible for the spaced practice.
+    def _get_qualified_questions(base_course, chapter_label, sub_chapter_label):
+        return db(
+            (db.questions.base_course == base_course)
+            & (
+                (db.questions.topic == "{}/{}".format(chapter_label, sub_chapter_label))
+                | (
+                    (db.questions.chapter == chapter_label)
+                    & (db.questions.topic == None)  # noqa: E711
+                    & (db.questions.subchapter == sub_chapter_label)
+                )
+            )
+            & (db.questions.practice == True)  # noqa: E712
+        ).select()
     practice_message1 = ""
     practice_message2 = ""
     practice_completion_count = 0
